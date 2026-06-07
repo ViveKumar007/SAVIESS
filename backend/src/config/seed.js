@@ -1,0 +1,145 @@
+const db = require('./db');
+const bcrypt = require('bcrypt');
+
+async function seed() {
+  console.log('Starting database seeding...');
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+
+    // 1. Seed Districts
+    console.log('Seeding districts...');
+    await connection.query('INSERT IGNORE INTO districts (id, name) VALUES (1, "Patna"), (2, "Nalanda"), (3, "Gaya")');
+
+    // 2. Seed Blocks
+    console.log('Seeding blocks...');
+    await connection.query('INSERT IGNORE INTO blocks (id, district_id, name) VALUES (1, 1, "Patna Sadar"), (2, 2, "Harnaut"), (3, 3, "Sherghati")');
+
+    // 3. Hash Password for standard users
+    const salt = await bcrypt.genSalt(10);
+    const defaultHash = await bcrypt.hash('Saviess@2026', salt);
+
+    // 4. Seed Users
+    console.log('Seeding users...');
+    
+    // Admin
+    const [adminCheck] = await connection.query('SELECT id FROM users WHERE email = "admin@saviess.org"');
+    let adminUserId;
+    if (adminCheck.length === 0) {
+      const [res] = await connection.query(
+        'INSERT INTO users (email, password_hash, first_name, last_name, role, phone, is_active) VALUES ("admin@saviess.org", ?, "Sanjay", "Prasad", "super_admin", "+919999000001", 1)',
+        [defaultHash]
+      );
+      adminUserId = res.insertId;
+    } else {
+      adminUserId = adminCheck[0].id;
+    }
+
+    // Field Manager
+    const [mgrCheck] = await connection.query('SELECT id FROM users WHERE email = "manager@saviess.org"');
+    let mgrUserId;
+    if (mgrCheck.length === 0) {
+      const [res] = await connection.query(
+        'INSERT INTO users (email, password_hash, first_name, last_name, role, phone, is_active) VALUES ("manager@saviess.org", ?, "Anoop", "Sinha", "field_manager", "+919999000002", 1)',
+        [defaultHash]
+      );
+      mgrUserId = res.insertId;
+    } else {
+      mgrUserId = mgrCheck[0].id;
+    }
+
+    // Field Officer
+    const [foCheck] = await connection.query('SELECT id FROM users WHERE email = "fo@saviess.org"');
+    let foUserId;
+    if (foCheck.length === 0) {
+      const [res] = await connection.query(
+        'INSERT INTO users (email, password_hash, first_name, last_name, role, phone, is_active) VALUES ("fo@saviess.org", ?, "Vivek", "Singh", "field_officer", "+919999000003", 1)',
+        [defaultHash]
+      );
+      foUserId = res.insertId;
+      
+      // Create Field Officer profile
+      await connection.query(
+        'INSERT IGNORE INTO field_officers (user_id, manager_id, district_id, block_id, coverage_area, status) VALUES (?, ?, 1, 1, "Patna Sadar blocks coverage", "active")',
+        [foUserId, mgrUserId]
+      );
+    }
+
+    // RHP
+    const [rhpCheck] = await connection.query('SELECT id FROM users WHERE email = "rhp@saviess.org"');
+    let rhpUserId;
+    if (rhpCheck.length === 0) {
+      const [res] = await connection.query(
+        'INSERT INTO users (email, password_hash, first_name, last_name, role, phone, is_active) VALUES ("rhp@saviess.org", ?, "Preeti", "Kumari", "rhp", "+919999000004", 1)',
+        [defaultHash]
+      );
+      rhpUserId = res.insertId;
+
+      // Create RHP Profile
+      const [rhpProfileRes] = await connection.query(
+        'INSERT IGNORE INTO rhps (user_id, center_name, district_id, block_id, village, status, toolkit_issued) VALUES (?, "Preeti\'s Vision Center", 2, 2, "Harnaut Village", "active", 1)',
+        [rhpUserId]
+      );
+      const rhpId = rhpProfileRes.insertId;
+
+      // Seed default inventory_rhp
+      const powers = [1.00, 1.50, 2.00, 2.50, 3.00];
+      for (const p of powers) {
+        const pStr = p.toFixed(2);
+        await connection.query(
+          `INSERT IGNORE INTO inventory_rhp 
+           (rhp_id, item_name, sku, glass_type, left_power_sph, right_power_sph, left_power_cyl, right_power_cyl, quantity, safety_stock_level, unit_price) 
+           VALUES (?, ?, ?, "reading", ?, ?, 0.00, 0.00, 5, 2, 120.00)`,
+          [rhpId, `Reading Glasses SPH +${pStr}`, `RD-SPH+${pStr}-CYL-0.00`, p, p]
+        );
+      }
+    }
+
+    // 5. Seed Central Warehouse Inventory
+    console.log('Seeding central inventory warehouse...');
+    const centralStockItems = [
+      { name: 'Reading Glasses SPH +1.00', sku: 'RD-SPH+1.00-CYL-0.00', power: 1.00, qty: 100 },
+      { name: 'Reading Glasses SPH +1.50', sku: 'RD-SPH+1.50-CYL-0.00', power: 1.50, qty: 120 },
+      { name: 'Reading Glasses SPH +2.00', sku: 'RD-SPH+2.00-CYL-0.00', power: 2.00, qty: 90 },
+      { name: 'Reading Glasses SPH +2.50', sku: 'RD-SPH+2.50-CYL-0.00', power: 2.50, qty: 85 },
+      { name: 'Reading Glasses SPH +3.00', sku: 'RD-SPH+3.00-CYL-0.00', power: 3.00, qty: 110 }
+    ];
+
+    for (const item of centralStockItems) {
+      await connection.query(
+        `INSERT INTO inventory_central 
+         (item_name, sku, glass_type, left_power_sph, right_power_sph, left_power_cyl, right_power_cyl, quantity, safety_stock_level, unit_price, supplier_info, last_restocked_at) 
+         VALUES (?, ?, 'reading', ?, ?, 0.00, 0.00, ?, 10, 120.00, 'VisionSpring Central supplier', CURRENT_TIMESTAMP)
+         ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)`,
+        [item.name, item.sku, item.power, item.power, item.qty]
+      );
+    }
+
+    // 6. Seed Toolkit Inventory Catalog
+    console.log('Seeding toolkits inventory...');
+    await connection.query(
+      `INSERT INTO toolkit_inventory (item_name, sku, total_quantity, available_quantity, unit_price, description) 
+       VALUES 
+       ("ASHA Snellen Acuity Charts", "TK-SNELLEN-01", 50, 45, 250.00, "Standard 6m visual acuity distance chart"),
+       ("Standard Trial Lens Set Cases", "TK-LENSCASE-02", 30, 28, 4500.00, "232 trial lenses set with frame container"),
+       ("Adjustable Trial Frames", "TK-FRAME-03", 40, 38, 800.00, "Comfortable multi-axis trial frame adjustment")
+       ON DUPLICATE KEY UPDATE total_quantity = VALUES(total_quantity)`
+    );
+
+    await connection.commit();
+    console.log('Database seeded successfully!');
+  } catch (error) {
+    await connection.rollback();
+    console.error('Seeding transaction failed:', error.message);
+  } finally {
+    connection.release();
+  }
+}
+
+// Execute seeding if this script is run directly
+if (require.main === module) {
+  seed().then(() => process.exit(0));
+}
+
+module.exports = seed;
