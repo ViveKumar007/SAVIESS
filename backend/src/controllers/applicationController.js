@@ -109,15 +109,9 @@ const getApplications = async (req, res) => {
     }
 
     // Role-based restrictions
-    if (user.role === 'field_manager') {
-      // Field Managers can only view applications in their manager's coverage district/block
-      // Let's get manager's profile district/block
-      const [mgr] = await db.query('SELECT district_id, block_id FROM field_officers WHERE user_id = ?', [user.userId]);
-      if (mgr.length > 0) {
-        query += ' AND a.district_id = ?';
-        params.push(mgr[0].district_id);
-      }
-    } else if (user.role === 'field_officer') {
+    // Note: super_admin, program_director, and field_manager can view all applications.
+    // Field officers can only view applications in their assigned district.
+    if (user.role === 'field_officer') {
       // Field Officers can only view applications in their specific district
       const [fo] = await db.query('SELECT district_id FROM field_officers WHERE user_id = ?', [user.userId]);
       if (fo.length > 0) {

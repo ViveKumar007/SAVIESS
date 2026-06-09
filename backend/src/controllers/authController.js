@@ -11,7 +11,9 @@ const generateAccessToken = (user) => {
       role: user.role,
       profileId: user.profileId || null,
       districtId: user.districtId || null,
-      blockId: user.blockId || null
+      blockId: user.blockId || null,
+      firstName: user.first_name || user.firstName || null,
+      lastName: user.last_name || user.lastName || null
     },
     process.env.JWT_SECRET || 'saviess_secret_key_2026',
     { expiresIn: '1h' } // 1 hour expiration

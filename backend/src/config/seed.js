@@ -132,6 +132,7 @@ async function seed() {
   } catch (error) {
     await connection.rollback();
     console.error('Seeding transaction failed:', error.message);
+    throw error;
   } finally {
     connection.release();
   }
@@ -139,7 +140,9 @@ async function seed() {
 
 // Execute seeding if this script is run directly
 if (require.main === module) {
-  seed().then(() => process.exit(0));
+  seed()
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
 }
 
 module.exports = seed;

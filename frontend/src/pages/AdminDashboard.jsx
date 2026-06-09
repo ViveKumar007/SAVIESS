@@ -91,7 +91,7 @@ const AdminDashboard = () => {
       // Fetch initial active live locations
       fetchLiveLocations();
     }
-  }, [mapRef.current]);
+  }, []);
 
   const fetchStats = async () => {
     try {

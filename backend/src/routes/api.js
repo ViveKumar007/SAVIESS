@@ -133,6 +133,17 @@ router.get(
   verifyToken, 
   clinicalController.getDispensingPdf
 );
+router.get(
+  '/patients', 
+  verifyToken, 
+  checkRole(['rhp']), 
+  clinicalController.getPatients
+);
+router.get(
+  '/rhps', 
+  verifyToken, 
+  clinicalController.getAllRhps
+);
 
 // ----------------------------------------------------------------------------
 // 5. Visits & Live Location Module

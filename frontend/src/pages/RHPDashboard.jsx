@@ -99,15 +99,12 @@ const RHPDashboard = () => {
 
   const fetchPatients = async () => {
     try {
-      // Use standard axios call
-      const res = await axios.get('http://localhost:5000/api/v1/visits', {
+      const res = await axios.get('http://localhost:5000/api/v1/patients', {
         headers: { Authorization: `Bearer ${token}` }
-      }); // Fallback check or get patients
-      // For standalone demo completeness, let's load clinical data. We mock patients list if database call is not supported
-      setPatients([
-        { id: 1, first_name: 'Manoj', last_name: 'Paswan', age: 48, phone: '+919900112233', village: 'Harnaut' },
-        { id: 2, first_name: 'Sita', last_name: 'Devi', age: 55, phone: '+919900112244', village: 'Harnaut' }
-      ]);
+      });
+      if (res.data.success) {
+        setPatients(res.data.data);
+      }
     } catch (err) {
       console.error('Fetch patients error:', err);
     }
@@ -285,9 +282,29 @@ const RHPDashboard = () => {
     }
   };
 
-  const handleDownloadInvoice = () => {
+  const handleDownloadInvoice = async () => {
     if (!dispensedInvoice) return;
-    window.open(`http://localhost:5000/api/v1/dispensings/${dispensedInvoice.dispensingId}/pdf?authorization=Bearer ${token}`, '_blank');
+    try {
+      const res = await axios.get(
+        `http://localhost:5000/api/v1/dispensings/${dispensedInvoice.dispensingId}/pdf`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          responseType: 'blob'
+        }
+      );
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `receipt_${dispensedInvoice.invoiceNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF download error:', err);
+      setErrorMsg('Failed to download PDF receipt.');
+    }
   };
 
   const handleProofChange = (e) => {

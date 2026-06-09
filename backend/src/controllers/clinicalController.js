@@ -1,5 +1,57 @@
 const db = require('../config/db');
 
+// Helper to escape special characters for PDF string literals
+const pdfEscape = (str) => {
+  if (!str) return '';
+  return String(str).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+};
+
+// Get all patients (role-filtered for RHP)
+const getPatients = async (req, res) => {
+  try {
+    const [rhps] = await db.query('SELECT id FROM rhps WHERE user_id = ?', [req.user.userId]);
+    if (rhps.length === 0) {
+      return res.status(403).json({ success: false, error: 'Only registered RHPs can view patients' });
+    }
+    const rhpId = rhps[0].id;
+
+    const [patients] = await db.query(
+      `SELECT p.*, d.name as district_name, b.name as block_name 
+       FROM patients p
+       JOIN districts d ON p.district_id = d.id
+       JOIN blocks b ON p.block_id = b.id
+       WHERE p.created_by_rhp_id = ?
+       ORDER BY p.created_at DESC`,
+      [rhpId]
+    );
+    res.json({ success: true, data: patients });
+  } catch (error) {
+    console.error('Get patients error:', error);
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+};
+
+// Get all RHP centers (for FO dropdown)
+const getAllRhps = async (req, res) => {
+  try {
+    const [rhps] = await db.query(
+      `SELECT r.id, r.center_name, r.village, r.status, r.district_id, r.block_id,
+              d.name as district_name, b.name as block_name,
+              u.first_name, u.last_name, u.phone
+       FROM rhps r
+       JOIN districts d ON r.district_id = d.id
+       JOIN blocks b ON r.block_id = b.id
+       JOIN users u ON r.user_id = u.id
+       WHERE r.status = 'active'
+       ORDER BY r.center_name ASC`
+    );
+    res.json({ success: true, data: rhps });
+  } catch (error) {
+    console.error('Get all RHPs error:', error);
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+};
+
 // Register a new patient
 const registerPatient = async (req, res) => {
   const { firstName, lastName, gender, age, phone, districtId, blockId, village } = req.body;
@@ -251,23 +303,23 @@ const getDispensingPdf = async (req, res) => {
       "(PATIENT RECEIPT / MELE KA RASEED) Tj",
       "0 -25 Td",
       "/F1 10 Tf",
-      `(Invoice Number / Raseed Sankhya: ${rec.invoice_number}) Tj`,
+      `(Invoice Number / Raseed Sankhya: ${pdfEscape(rec.invoice_number)}) Tj`,
       "0 -15 Td",
-      `(Date / Tareekh: ${new Date(rec.dispensing_date).toDateString()}) Tj`,
+      `(Date / Tareekh: ${pdfEscape(new Date(rec.dispensing_date).toDateString())}) Tj`,
       "0 -15 Td",
-      `(Vision Center / Netra Kendra: ${rec.center_name}) Tj`,
+      `(Vision Center / Netra Kendra: ${pdfEscape(rec.center_name)}) Tj`,
       "0 -15 Td",
-      `(Dispensed By / Karmi Name: ${rec.rhp_first} ${rec.rhp_last}) Tj`,
+      `(Dispensed By / Karmi Name: ${pdfEscape(rec.rhp_first)} ${pdfEscape(rec.rhp_last)}) Tj`,
       "0 -25 Td",
       "/F2 12 Tf",
       "(PATIENT PROFILE / PATIENT VIVARAN) Tj",
       "0 -15 Td",
       "/F1 10 Tf",
-      `(Name / Naam: ${rec.first_name} ${rec.last_name}) Tj`,
+      `(Name / Naam: ${pdfEscape(rec.first_name)} ${pdfEscape(rec.last_name)}) Tj`,
       "0 -15 Td",
-      `(Age & Gender / Umar aur Ling: ${rec.age} Yrs / ${rec.gender.toUpperCase()}) Tj`,
+      `(Age & Gender / Umar aur Ling: ${rec.age} Yrs / ${pdfEscape(rec.gender.toUpperCase())}) Tj`,
       "0 -15 Td",
-      `(Address / Pata: Village ${rec.village}, Block ${rec.block_name}, District ${rec.district_name}) Tj`,
+      `(Address / Pata: Village ${pdfEscape(rec.village)}, Block ${pdfEscape(rec.block_name)}, District ${pdfEscape(rec.district_name)}) Tj`,
       "0 -25 Td",
       "/F2 12 Tf",
       "(DISPENSING SPECTACLES POWER / CHASHMA NO. DETAILS) Tj",
@@ -277,7 +329,7 @@ const getDispensingPdf = async (req, res) => {
       "0 -15 Td",
       `(Right Eye Power / Dayi Aankh Power: SPH ${rec.right_power_sph?.toFixed(2) || '0.00'} / CYL ${rec.right_power_cyl?.toFixed(2) || '0.00'}) Tj`,
       "0 -15 Td",
-      `(Spectacle Type / Chashma Type: ${rec.glass_type.toUpperCase()} | Frame: ${rec.frame_type} - ${rec.frame_color}) Tj`,
+      `(Spectacle Type / Chashma Type: ${pdfEscape(rec.glass_type.toUpperCase())} | Frame: ${pdfEscape(rec.frame_type)} - ${pdfEscape(rec.frame_color)}) Tj`,
       "0 -25 Td",
       "/F2 12 Tf",
       "(BILLING & FEES / SHULK VIVARAN) Tj",
@@ -297,7 +349,7 @@ const getDispensingPdf = async (req, res) => {
     ];
 
     const contentStream = textLines.join('\n') + '\n';
-    const contentLength = contentStream.length;
+    const contentLength = Buffer.byteLength(contentStream, 'binary');
 
     addChunk(`5 0 obj\n<< /Length ${contentLength} >>\nstream\n${contentStream}endstream\nendobj\n`);
 
@@ -356,6 +408,8 @@ const getDispensingPdf = async (req, res) => {
 
 module.exports = {
   registerPatient,
+  getPatients,
+  getAllRhps,
   logScreening,
   dispenseGlasses,
   getDispensingPdf

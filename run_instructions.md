@@ -41,6 +41,7 @@ Follow these steps to run the frontend and backend applications locally, using t
 2. Install the backend dependencies (if you haven't already):
    ```bash
    npm install
+   
    ```
 3. Run the backend development server:
    ```bash
