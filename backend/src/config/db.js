@@ -11,7 +11,17 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 10000
+  keepAliveInitialDelay: 10000,
+  // SSL required for cloud database providers like TiDB Serverless
+  ...(process.env.DB_SSL === 'true' && {
+    ssl: { rejectUnauthorized: true }
+  })
+});
+
+// Set SQL_MODE on each new connection to ensure compatibility
+// TiDB is MySQL-compatible but setting explicit sql_mode ensures consistency
+pool.on('connection', (connection) => {
+  connection.query("SET SESSION sql_mode = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
 });
 
 // Test the connection pool on startup

@@ -252,9 +252,127 @@ const changePassword = async (req, res) => {
   }
 };
 
+// ============================================================================
+// Provision User — Admin creates FO or RHP with full profile in one transaction
+// ============================================================================
+const provisionUser = async (req, res) => {
+  const { firstName, lastName, phone, email, role, districtId, blockId, centerName, village, coverageArea } = req.body;
+
+  // Validate common fields
+  if (!firstName || !lastName || !phone || !role || !districtId || !blockId) {
+    return res.status(400).json({ success: false, error: 'Required fields: firstName, lastName, phone, role, districtId, blockId' });
+  }
+
+  if (!['field_officer', 'rhp'].includes(role)) {
+    return res.status(400).json({ success: false, error: 'Role must be either field_officer or rhp' });
+  }
+
+  // RHP-specific validation
+  if (role === 'rhp' && (!centerName || !village)) {
+    return res.status(400).json({ success: false, error: 'Center name and village are required for RHP role' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Check for existing user with same phone
+    const [existing] = await connection.query('SELECT id FROM users WHERE phone = ?', [phone]);
+    if (existing.length > 0) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, error: 'A user with this phone number already exists' });
+    }
+
+    // Auto-generate email if not provided
+    const slug = `${firstName.toLowerCase().replace(/\s+/g, '')}.${lastName.toLowerCase().replace(/\s+/g, '')}`;
+    const randomNum = Math.floor(100 + Math.random() * 900);
+    const generatedEmail = email || `${slug}${randomNum}@saviess.org`;
+
+    // Check email uniqueness
+    const [emailCheck] = await connection.query('SELECT id FROM users WHERE email = ?', [generatedEmail]);
+    if (emailCheck.length > 0) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, error: 'A user with this email already exists. Try providing a unique email.' });
+    }
+
+    // Generate default password: Saviess@<last4digits>
+    const last4 = phone.replace(/\D/g, '').slice(-4);
+    const defaultPassword = `Saviess@${last4}`;
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(defaultPassword, salt);
+
+    // 1. Create user record
+    const [userResult] = await connection.query(
+      'INSERT INTO users (email, password_hash, first_name, last_name, role, phone) VALUES (?, ?, ?, ?, ?, ?)',
+      [generatedEmail, passwordHash, firstName, lastName, role, phone]
+    );
+    const userId = userResult.insertId;
+
+    let profileData = {};
+
+    // 2. Create role-specific profile
+    if (role === 'field_officer') {
+      const managerId = req.user.userId; // Admin who created becomes default manager
+      const [foResult] = await connection.query(
+        `INSERT INTO field_officers (user_id, manager_id, district_id, block_id, coverage_area, status) 
+         VALUES (?, ?, ?, ?, ?, 'active')`,
+        [userId, managerId, parseInt(districtId), parseInt(blockId), coverageArea || '']
+      );
+      profileData = { profileId: foResult.insertId, type: 'field_officer' };
+
+    } else if (role === 'rhp') {
+      const [rhpResult] = await connection.query(
+        `INSERT INTO rhps (user_id, center_name, district_id, block_id, village, status) 
+         VALUES (?, ?, ?, ?, ?, 'active')`,
+        [userId, centerName, parseInt(districtId), parseInt(blockId), village]
+      );
+      const rhpId = rhpResult.insertId;
+      profileData = { profileId: rhpId, type: 'rhp', centerName };
+
+      // Seed default inventory for RHP (standard reading powers)
+      const standardPowers = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00];
+      for (const power of standardPowers) {
+        const powerStr = power.toFixed(2);
+        const sku = `RD-SPH+${powerStr}-CYL-0.00`;
+        const itemName = `Reading Glasses SPH +${powerStr}`;
+        await connection.query(
+          `INSERT INTO inventory_rhp 
+           (rhp_id, item_name, sku, glass_type, left_power_sph, right_power_sph, left_power_cyl, right_power_cyl, quantity, safety_stock_level, unit_price) 
+           VALUES (?, ?, ?, 'reading', ?, ?, 0.00, 0.00, 0, 2, 120.00)`,
+          [rhpId, itemName, sku, power, power]
+        );
+      }
+    }
+
+    await connection.commit();
+
+    res.status(201).json({
+      success: true,
+      message: `${role === 'rhp' ? 'RHP' : 'Field Officer'} account provisioned successfully`,
+      data: {
+        userId,
+        email: generatedEmail,
+        defaultPassword,
+        firstName,
+        lastName,
+        role,
+        phone,
+        ...profileData
+      }
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Provision user error:', error);
+    res.status(500).json({ success: false, error: 'Transaction failed: ' + error.message });
+  } finally {
+    connection.release();
+  }
+};
+
 module.exports = {
   register,
   login,
   getProfile,
-  changePassword
+  changePassword,
+  provisionUser
 };

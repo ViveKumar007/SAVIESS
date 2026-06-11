@@ -19,6 +19,42 @@ router.post('/auth/register', authController.register); // Restricted inside con
 router.post('/auth/login', authController.login);
 router.get('/auth/profile', verifyToken, authController.getProfile);
 router.put('/auth/change-password', verifyToken, authController.changePassword);
+router.post(
+  '/auth/provision',
+  verifyToken,
+  checkRole(['super_admin', 'program_director', 'field_manager']),
+  authController.provisionUser
+);
+
+// ----------------------------------------------------------------------------
+// 1b. Location Lookups (Districts & Blocks for dropdowns)
+// ----------------------------------------------------------------------------
+router.get('/districts', verifyToken, async (req, res) => {
+  try {
+    const pool = require('../config/db');
+    const [districts] = await pool.query('SELECT id, name FROM districts ORDER BY name ASC');
+    res.json({ success: true, data: districts });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+});
+router.get('/blocks', verifyToken, async (req, res) => {
+  try {
+    const pool = require('../config/db');
+    const { districtId } = req.query;
+    let query = 'SELECT id, district_id, name FROM blocks';
+    const params = [];
+    if (districtId) {
+      query += ' WHERE district_id = ?';
+      params.push(parseInt(districtId));
+    }
+    query += ' ORDER BY name ASC';
+    const [blocks] = await pool.query(query, params);
+    res.json({ success: true, data: blocks });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+});
 
 // ----------------------------------------------------------------------------
 // 2. Onboarding & Applications Module
@@ -193,6 +229,32 @@ router.get(
   verifyToken, 
   checkRole(['super_admin', 'program_director', 'field_manager']), 
   dashboardController.getFoDailySummary
+);
+
+// Admin Data Table Routes — View all records entered by FOs and RHPs
+router.get(
+  '/dashboard/patients',
+  verifyToken,
+  checkRole(['super_admin', 'program_director', 'field_manager']),
+  dashboardController.getAllPatients
+);
+router.get(
+  '/dashboard/screenings',
+  verifyToken,
+  checkRole(['super_admin', 'program_director', 'field_manager']),
+  dashboardController.getAllScreenings
+);
+router.get(
+  '/dashboard/dispensings',
+  verifyToken,
+  checkRole(['super_admin', 'program_director', 'field_manager']),
+  dashboardController.getAllDispensings
+);
+router.get(
+  '/dashboard/visits',
+  verifyToken,
+  checkRole(['super_admin', 'program_director', 'field_manager']),
+  dashboardController.getAllVisits
 );
 
 module.exports = router;
