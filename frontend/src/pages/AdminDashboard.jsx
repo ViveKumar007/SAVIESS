@@ -39,6 +39,8 @@ const AdminDashboard = () => {
   const [createError, setCreateError] = useState('');
   const [createdUser, setCreatedUser] = useState(null);
   const [copiedField, setCopiedField] = useState('');
+  const [pincodeLoading, setPincodeLoading] = useState(false);
+  const [pincodeError, setPincodeError] = useState('');
 
   // Active section state: 'stats' | 'createUser' | 'rhpApps'
   const [activeSection, setActiveSection] = useState('stats');
@@ -291,6 +293,35 @@ const AdminDashboard = () => {
   const handleFormChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (field === 'districtId') setFormData(prev => ({ ...prev, districtId: value, blockId: '' }));
+  };
+
+  const handlePincodeLookup = async (pincode) => {
+    handleFormChange('pincode', pincode);
+    setPincodeError('');
+    if (pincode.length !== 6 || !/^\d{6}$/.test(pincode)) return;
+    setPincodeLoading(true);
+    try {
+      const res = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+      const data = await res.json();
+      if (data[0].Status === 'Success') {
+        const p = data[0].PostOffice[0];
+        setFormData(prev => ({
+          ...prev,
+          pincode,
+          area: p.Name,
+          city: p.Division,
+          district: p.District,
+          state: p.State,
+          block: '',
+        }));
+      } else {
+        setPincodeError('Invalid pincode — no results found.');
+        setFormData(prev => ({ ...prev, area: '', city: '', district: '', state: '', block: '' }));
+      }
+    } catch {
+      setPincodeError('Pincode lookup failed. Check your connection.');
+    }
+    setPincodeLoading(false);
   };
 
   const handleCreateUser = async (e) => {
@@ -768,24 +799,76 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-                {/* District + Block dropdowns */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">District *</label>
-                    <select required value={formData.districtId} onChange={e => handleFormChange('districtId', e.target.value)} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm appearance-none">
-                      <option value="">Select district...</option>
-                      {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </select>
+                {/* Location — pincode auto-fill for FO/FM/PD, district+block dropdowns fallback */}
+                {createRole === 'field_officer' ? (
+                  <div className="space-y-4 p-4 bg-teal-50/40 rounded-xl border border-teal-100">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pincode *</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          required
+                          maxLength={6}
+                          value={formData.pincode || ''}
+                          onChange={e => handlePincodeLookup(e.target.value)}
+                          placeholder="e.g. 800001"
+                          className="w-full px-4 py-3 border rounded-xl bg-white focus:outline-none focus:border-teal-500 text-sm"
+                        />
+                        {pincodeLoading && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        )}
+                      </div>
+                      {pincodeError && <p className="text-xs text-rose-500 mt-1">{pincodeError}</p>}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Area</label>
+                        <input type="text" readOnly value={formData.area || ''} placeholder="Auto-filled" className="w-full px-4 py-3 border rounded-xl bg-slate-100 text-sm text-slate-500 cursor-not-allowed" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">City / Division</label>
+                        <input type="text" readOnly value={formData.city || ''} placeholder="Auto-filled" className="w-full px-4 py-3 border rounded-xl bg-slate-100 text-sm text-slate-500 cursor-not-allowed" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">District</label>
+                        <input type="text" readOnly value={formData.district || ''} placeholder="Auto-filled" className="w-full px-4 py-3 border rounded-xl bg-slate-100 text-sm text-slate-500 cursor-not-allowed" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">State</label>
+                        <input type="text" readOnly value={formData.state || ''} placeholder="Auto-filled" className="w-full px-4 py-3 border rounded-xl bg-slate-100 text-sm text-slate-500 cursor-not-allowed" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Block</label>
+                      <input
+                        type="text"
+                        value={formData.block || ''}
+                        onChange={e => handleFormChange('block', e.target.value)}
+                        placeholder="Type block name"
+                        className="w-full px-4 py-3 border rounded-xl bg-white focus:outline-none focus:border-teal-500 text-sm"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Block *</label>
-                    <select required value={formData.blockId} onChange={e => handleFormChange('blockId', e.target.value)} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm appearance-none" disabled={!formData.districtId}>
-                      <option value="">{formData.districtId ? 'Select block...' : 'Select district first'}</option>
-                      {blocks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">District *</label>
+                      <select required value={formData.districtId} onChange={e => handleFormChange('districtId', e.target.value)} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm appearance-none">
+                        <option value="">Select district...</option>
+                        {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Block *</label>
+                      <select required value={formData.blockId} onChange={e => handleFormChange('blockId', e.target.value)} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm appearance-none" disabled={!formData.districtId}>
+                        <option value="">{formData.districtId ? 'Select block...' : 'Select district first'}</option>
+                        {blocks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </div>
                   </div>
-                </div>
-
+                )}
                 {/* Role-specific fields */}
                 {createRole === 'rhp' ? (
                   <div className="grid grid-cols-2 gap-4 p-4 bg-purple-50/50 rounded-xl border border-purple-100">
