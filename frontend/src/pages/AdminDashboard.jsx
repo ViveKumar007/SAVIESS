@@ -335,13 +335,18 @@ const AdminDashboard = () => {
         phone: formData.phone,
         email: formData.email || undefined,
         role: createRole,
-        districtId: formData.districtId,
-        blockId: formData.blockId,
       };
-      if (createRole === 'rhp') {
-        payload.centerName = formData.centerName;
-        payload.village = formData.village;
+      if (createRole === 'field_officer') {
+        payload.pincode = formData.pincode;
+        payload.area = formData.area;
+        payload.city = formData.city;
+        payload.district = formData.district;
+        payload.state = formData.state;
+        payload.block = formData.block;
+        payload.coverageArea = formData.coverageArea;
       } else {
+        payload.districtId = formData.districtId;
+        payload.blockId = formData.blockId;
         payload.coverageArea = formData.coverageArea;
       }
       const res = await axios.post(`${API}/auth/provision`, payload, {
@@ -712,7 +717,7 @@ const AdminDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Create New User</h1>
-                <p className="text-slate-500 text-sm mt-1">Provision a Field Officer or RHP with full account and profile</p>
+                <p className="text-slate-500 text-sm mt-1">Provision a Field Officer, Field Manager, or Program Director with full account and profile</p>
               </div>
               <button onClick={() => { setActiveSection('stats'); setCreatedUser(null); }} className="p-2 rounded-xl border hover:bg-slate-50 transition-all">
                 <X className="w-5 h-5 text-slate-400" />
@@ -725,7 +730,7 @@ const AdminDashboard = () => {
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-emerald-100 rounded-full"><CheckCircle className="w-6 h-6 text-emerald-600" /></div>
                   <div>
-                    <h3 className="font-bold text-emerald-900 text-lg">{createdUser.role === 'rhp' ? 'RHP' : 'Field Officer'} Created Successfully!</h3>
+                    <h3 className="font-bold text-emerald-900 text-lg">{createdUser.role === 'field_manager' ? 'Field Manager' : createdUser.role === 'program_director' ? 'Program Director' : 'Field Officer'} Created Successfully!</h3>
                     <p className="text-emerald-700 text-sm">{createdUser.firstName} {createdUser.lastName} can now log in</p>
                   </div>
                 </div>
@@ -799,7 +804,7 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-                {/* Location — pincode auto-fill for FO/FM/PD, district+block dropdowns fallback */}
+                {/* Location — pincode auto-fill for FO, district+block dropdowns for FM/PD */}
                 {createRole === 'field_officer' ? (
                   <div className="space-y-4 p-4 bg-teal-50/40 rounded-xl border border-teal-100">
                     <div>
@@ -869,24 +874,12 @@ const AdminDashboard = () => {
                     </div>
                   </div>
                 )}
-                {/* Role-specific fields */}
-                {createRole === 'rhp' ? (
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-purple-50/50 rounded-xl border border-purple-100">
-                    <div>
-                      <label className="block text-xs font-bold text-purple-600 uppercase tracking-wider mb-2">Vision Center Name *</label>
-                      <input type="text" required value={formData.centerName} onChange={e => handleFormChange('centerName', e.target.value)} placeholder="Sunita's Vision Center" className="w-full px-4 py-3 border rounded-xl bg-white focus:outline-none focus:border-purple-500 text-sm" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-purple-600 uppercase tracking-wider mb-2">Village *</label>
-                      <input type="text" required value={formData.village} onChange={e => handleFormChange('village', e.target.value)} placeholder="Harnaut Village" className="w-full px-4 py-3 border rounded-xl bg-white focus:outline-none focus:border-purple-500 text-sm" />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-4 bg-teal-50/50 rounded-xl border border-teal-100">
-                    <label className="block text-xs font-bold text-teal-600 uppercase tracking-wider mb-2">Coverage Area</label>
-                    <input type="text" value={formData.coverageArea} onChange={e => handleFormChange('coverageArea', e.target.value)} placeholder="Patna Sadar blocks coverage" className="w-full px-4 py-3 border rounded-xl bg-white focus:outline-none focus:border-teal-500 text-sm" />
-                  </div>
-                )}
+
+                {/* Coverage Area (all roles) */}
+                <div className="p-4 bg-teal-50/50 rounded-xl border border-teal-100">
+                  <label className="block text-xs font-bold text-teal-600 uppercase tracking-wider mb-2">Coverage Area</label>
+                  <input type="text" value={formData.coverageArea} onChange={e => handleFormChange('coverageArea', e.target.value)} placeholder="Patna Sadar blocks coverage" className="w-full px-4 py-3 border rounded-xl bg-white focus:outline-none focus:border-teal-500 text-sm" />
+                </div>
 
                 {/* Info box */}
                 <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-700 flex items-start space-x-2">
@@ -894,8 +887,12 @@ const AdminDashboard = () => {
                   <span>A default password <strong>Saviess@[last 4 digits of phone]</strong> will be auto-generated. The credentials will be shown after creation.</span>
                 </div>
 
-                <button type="submit" disabled={createLoading} className={`w-full py-3.5 font-bold text-sm rounded-xl transition-all shadow-md flex items-center justify-center space-x-2 ${createRole === 'rhp' ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-500/15' : 'bg-teal-500 hover:bg-teal-600 text-white shadow-teal-500/15'}`}>
-                  {createLoading ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span> : <><UserPlus className="w-4 h-4" /><span>Create {createRole === 'rhp' ? 'RHP' : 'Field Officer'} Account</span></>}
+                <button
+                  type="submit"
+                  disabled={createLoading}
+                  className={`w-full py-3.5 font-bold text-sm rounded-xl transition-all shadow-md flex items-center justify-center space-x-2 ${createRole === 'field_manager' ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/15' : createRole === 'program_director' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-500/15' : 'bg-teal-500 hover:bg-teal-600 text-white shadow-teal-500/15'}`}
+                >
+                  {createLoading ? <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span> : <><UserPlus className="w-4 h-4" /><span>Create {createRole === 'field_manager' ? 'Field Manager' : createRole === 'program_director' ? 'Program Director' : 'Field Officer'} Account</span></>}
                 </button>
               </form>
             )}
@@ -960,7 +957,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Card 5: Toolkits Issued (Prominent styling) */}
+          {/* Card 5: Toolkits Issued */}
           <div className="bg-white p-5 rounded-2xl border shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Kits Issued</span>
@@ -971,7 +968,7 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Card 6: Toolkits remaining in warehouse (LOW stock warning) */}
+          {/* Card 6: Toolkits remaining (LOW stock warning) */}
           <div className={`p-5 rounded-2xl border shadow-sm flex flex-col justify-between transition-all ${
             isKitsStockLow 
               ? 'bg-rose-50 border-rose-200 text-rose-900 animate-pulse' 
@@ -1209,9 +1206,9 @@ const AdminDashboard = () => {
         </>
         ) : (
         <>
-        /* ================================================================ */
-        /* RHP APPLICATIONS MANAGEMENT PANEL                                */
-        /* ================================================================ */
+        {/* ================================================================ */}
+        {/* RHP APPLICATIONS MANAGEMENT PANEL                                */}
+        {/* ================================================================ */}
         <div className="space-y-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
@@ -1481,7 +1478,7 @@ const AdminDashboard = () => {
             </div>
           )}
         </div>
-        </> /* end of stats/data view */
+        </>
         )}
 
       </main>
