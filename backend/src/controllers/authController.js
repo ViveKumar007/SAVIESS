@@ -2,6 +2,11 @@ const db = require('../config/db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
+// ── Named constants (previously magic numbers) ──
+const STANDARD_READING_POWERS = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00];
+const DEFAULT_UNIT_PRICE = 120.00;
+const DEFAULT_SAFETY_STOCK = 2;
+
 // Generate Access Token
 const generateAccessToken = (user) => {
   return jwt.sign(
@@ -15,7 +20,7 @@ const generateAccessToken = (user) => {
       firstName: user.first_name || user.firstName || null,
       lastName: user.last_name || user.lastName || null
     },
-    process.env.JWT_SECRET || 'saviess_secret_key_2026',
+    process.env.JWT_SECRET,
     { expiresIn: '1h' } // 1 hour expiration
   );
 };
@@ -24,7 +29,7 @@ const generateAccessToken = (user) => {
 const generateRefreshToken = (user) => {
   return jwt.sign(
     { userId: user.id },
-    process.env.JWT_REFRESH_SECRET || 'saviess_refresh_secret_key_2026',
+    process.env.JWT_REFRESH_SECRET,
     { expiresIn: '7d' } // 7 days expiration
   );
 };
@@ -330,16 +335,15 @@ const provisionUser = async (req, res) => {
       profileData = { profileId: rhpId, type: 'rhp', centerName };
 
       // Seed default inventory for RHP (standard reading powers)
-      const standardPowers = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00];
-      for (const power of standardPowers) {
+      for (const power of STANDARD_READING_POWERS) {
         const powerStr = power.toFixed(2);
         const sku = `RD-SPH+${powerStr}-CYL-0.00`;
         const itemName = `Reading Glasses SPH +${powerStr}`;
         await connection.query(
           `INSERT INTO inventory_rhp 
            (rhp_id, item_name, sku, glass_type, left_power_sph, right_power_sph, left_power_cyl, right_power_cyl, quantity, safety_stock_level, unit_price) 
-           VALUES (?, ?, ?, 'reading', ?, ?, 0.00, 0.00, 0, 2, 120.00)`,
-          [rhpId, itemName, sku, power, power]
+           VALUES (?, ?, ?, 'reading', ?, ?, 0.00, 0.00, 0, ?, ?)`,
+          [rhpId, itemName, sku, power, power, DEFAULT_SAFETY_STOCK, DEFAULT_UNIT_PRICE]
         );
       }
     }

@@ -1,7 +1,7 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const mysql = require('mysql2/promise');
 const fs = require('fs');
-const path = require('path');
 
 async function loadSchema() {
   const conn = await mysql.createConnection({
@@ -17,15 +17,18 @@ async function loadSchema() {
   console.log('Connected to TiDB Serverless cloud MySQL. Loading schema...');
 
   let sql = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'schema.sql'), 'utf8');
+  let sql2 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_v2.sql'), 'utf8');
 
   // Remove CREATE DATABASE and USE statements (TiDB Serverless uses 'test' database)
   sql = sql.replace(/CREATE DATABASE IF NOT EXISTS.*?;/s, '');
-  sql = sql.replace(/USE saviess_vep;/, '');
+  sql = sql.replace(/USE saviess_vep;/g, '');
+  sql2 = sql2.replace(/USE saviess_vep;/g, '');
 
   // Remove DELIMITER blocks (triggers) — not supported in multi-statement mode
   sql = sql.replace(/DELIMITER \$\$[\s\S]*?DELIMITER ;/g, '');
 
   await conn.query(sql);
+  await conn.query(sql2);
   console.log('✅ Schema loaded successfully!');
 
   // Now create triggers separately (TiDB supports triggers)

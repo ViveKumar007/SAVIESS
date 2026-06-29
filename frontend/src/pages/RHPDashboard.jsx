@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { LogOut, Eye, Sparkles, Box, Hammer, ClipboardList, UserCheck, Plus, CheckCircle, ShieldAlert, FileDown, Camera } from 'lucide-react';
+import { API } from '../api';
+
 
 const RHPDashboard = () => {
   const [activeTab, setActiveTab] = useState('clinical');
@@ -14,17 +16,9 @@ const RHPDashboard = () => {
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Dropdown lists
-  const districts = [
-    { id: 1, name: 'Patna' },
-    { id: 2, name: 'Nalanda' },
-    { id: 3, name: 'Gaya' }
-  ];
-  const blocks = [
-    { id: 1, districtId: 1, name: 'Patna Sadar' },
-    { id: 2, districtId: 2, name: 'Harnaut' },
-    { id: 3, districtId: 3, name: 'Sherghati' }
-  ];
+  // Dropdown lists (fetched from API)
+  const [districts, setDistricts] = useState([]);
+  const [blocks, setBlocks] = useState([]);
 
   // Form States: Patient Registration
   const [patFirst, setPatFirst] = useState('');
@@ -32,8 +26,8 @@ const RHPDashboard = () => {
   const [patGender, setPatGender] = useState('male');
   const [patAge, setPatAge] = useState('');
   const [patPhone, setPatPhone] = useState('');
-  const [patDistrict, setPatDistrict] = useState('1');
-  const [patBlock, setPatBlock] = useState('1');
+  const [patDistrict, setPatDistrict] = useState('');
+  const [patBlock, setPatBlock] = useState('');
   const [patVillage, setPatVillage] = useState('');
 
   // Form States: Refraction Screening
@@ -66,7 +60,7 @@ const RHPDashboard = () => {
 
   // Form States: Requisition Indent
   const [indentDate, setIndentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [indentItems, setIndentItems] = useState([{ itemName: 'Reading Glasses SPH +1.50', sku: 'RD-SPH+1.50-CYL-0.00', glassType: 'reading', leftPowerSph: '1.50', rightPowerSph: '1.50', quantityRequested: '10', unitPrice: '120' }]);
+  const [indentItems, setIndentItems] = useState([{ itemName: '', sku: '', glassType: 'reading', leftPowerSph: '1.50', rightPowerSph: '1.50', quantityRequested: '', unitPrice: '120' }]);
 
   // Proof Image Upload State (KYC / Screening photo proof)
   const [proofFile, setProofFile] = useState(null);
@@ -77,6 +71,7 @@ const RHPDashboard = () => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   useEffect(() => {
+    fetchDistricts();
     if (user.profileId) {
       fetchInventory();
       fetchPatients();
@@ -84,9 +79,32 @@ const RHPDashboard = () => {
     }
   }, [user.profileId]);
 
+  // Fetch blocks when district changes
+  useEffect(() => {
+    if (!patDistrict) { setBlocks([]); return; }
+    const loadBlocks = async () => {
+      try {
+        const res = await axios.get(`${API}/blocks?districtId=${patDistrict}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data.success) setBlocks(res.data.data);
+      } catch (err) { console.error('Load blocks error:', err); }
+    };
+    loadBlocks();
+  }, [patDistrict]);
+
+  const fetchDistricts = async () => {
+    try {
+      const res = await axios.get(`${API}/districts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) setDistricts(res.data.data);
+    } catch (err) { console.error('Load districts error:', err); }
+  };
+
   const fetchInventory = async () => {
     try {
-      const res = await axios.get(`http://localhost:5000/api/v1/inventory/rhp/${user.profileId}`, {
+      const res = await axios.get(`${API}/inventory/rhp/${user.profileId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success) {
@@ -99,7 +117,7 @@ const RHPDashboard = () => {
 
   const fetchPatients = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/v1/patients', {
+      const res = await axios.get(`${API}/patients`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success) {
@@ -112,7 +130,7 @@ const RHPDashboard = () => {
 
   const fetchIndents = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/v1/indents', {
+      const res = await axios.get(`${API}/indents`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success) {
@@ -130,7 +148,7 @@ const RHPDashboard = () => {
     setSuccessMsg('');
 
     try {
-      const res = await axios.post('http://localhost:5000/api/v1/patients', {
+      const res = await axios.post(`${API}/patients`, {
         firstName: patFirst,
         lastName: patLast,
         gender: patGender,
@@ -173,7 +191,7 @@ const RHPDashboard = () => {
     setSuccessMsg('');
 
     try {
-      const res = await axios.post('http://localhost:5000/api/v1/screenings', {
+      const res = await axios.post(`${API}/screenings`, {
         patientId: screenPatientId,
         screeningDate: screenDate,
         visualAcuityLeft: vaLeft,
@@ -223,7 +241,7 @@ const RHPDashboard = () => {
     setSuccessMsg('');
 
     try {
-      const res = await axios.post('http://localhost:5000/api/v1/dispensings', {
+      const res = await axios.post(`${API}/dispensings`, {
         screeningId: dispenseScreenId,
         patientId: dispensePatientId,
         dispensingDate: dispenseDate,
@@ -261,7 +279,7 @@ const RHPDashboard = () => {
     setSuccessMsg('');
 
     try {
-      const res = await axios.post('http://localhost:5000/api/v1/indents', {
+      const res = await axios.post(`${API}/indents`, {
         requestDate: indentDate,
         items: indentItems
       }, {
@@ -272,7 +290,7 @@ const RHPDashboard = () => {
         setSuccessMsg(`Indent sheet ${res.data.indentCode} raised successfully!`);
         fetchIndents();
         // Reset form to standard
-        setIndentItems([{ itemName: 'Reading Glasses SPH +1.50', sku: 'RD-SPH+1.50-CYL-0.00', glassType: 'reading', leftPowerSph: '1.50', rightPowerSph: '1.50', quantityRequested: '10', unitPrice: '120' }]);
+        setIndentItems([{ itemName: '', sku: '', glassType: 'reading', leftPowerSph: '1.50', rightPowerSph: '1.50', quantityRequested: '', unitPrice: '120' }]);
       }
       setLoading(false);
     } catch (err) {
@@ -286,7 +304,7 @@ const RHPDashboard = () => {
     if (!dispensedInvoice) return;
     try {
       const res = await axios.get(
-        `http://localhost:5000/api/v1/dispensings/${dispensedInvoice.dispensingId}/pdf`,
+        `${API}/dispensings/${dispensedInvoice.dispensingId}/pdf`,
         {
           headers: { Authorization: `Bearer ${token}` },
           responseType: 'blob'
@@ -436,6 +454,21 @@ const RHPDashboard = () => {
                   type="tel" placeholder="Phone Number (Optional)" value={patPhone} onChange={(e) => setPatPhone(e.target.value)}
                   className="w-full px-4 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm"
                 />
+                <select
+                  required value={patDistrict} onChange={(e) => { setPatDistrict(e.target.value); setPatBlock(''); }}
+                  className="w-full px-4 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm"
+                >
+                  <option value="">Select District...</option>
+                  {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                <select
+                  required value={patBlock} onChange={(e) => setPatBlock(e.target.value)}
+                  className="w-full px-4 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm"
+                  disabled={!patDistrict}
+                >
+                  <option value="">{patDistrict ? 'Select Block...' : 'Select district first'}</option>
+                  {blocks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
                 <input
                   type="text" required placeholder="Village Name" value={patVillage} onChange={(e) => setPatVillage(e.target.value)}
                   className="w-full px-4 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm"

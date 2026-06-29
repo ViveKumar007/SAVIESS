@@ -12,6 +12,12 @@ const { processLocationTracking } = require('./controllers/visitController');
 const app = express();
 const server = http.createServer(app);
 
+// Startup validation for critical environment variables
+if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+  console.error('CRITICAL: JWT_SECRET and JWT_REFRESH_SECRET must be set in environment variables.');
+  process.exit(1);
+}
+
 // Configure CORS to allow communication from local react client
 app.use(cors({
   origin: process.env.CLIENT_URL || '*',
@@ -45,7 +51,7 @@ io.use((socket, next) => {
 
   const tokenStr = token.startsWith('Bearer ') ? token.split(' ')[1] : token;
   try {
-    const decoded = jwt.verify(tokenStr, process.env.JWT_SECRET || 'saviess_secret_key_2026');
+    const decoded = jwt.verify(tokenStr, process.env.JWT_SECRET);
     socket.user = decoded;
     next();
   } catch (error) {

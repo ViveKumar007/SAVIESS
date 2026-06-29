@@ -2,6 +2,11 @@ const db = require('../config/db');
 const bcrypt = require('bcrypt');
 const { uploadStream } = require('../utils/uploadHandler');
 
+// ── Named constants (previously magic numbers) ──
+const STANDARD_READING_POWERS = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00];
+const DEFAULT_UNIT_PRICE = 120.00;
+const DEFAULT_SAFETY_STOCK = 2;
+
 // Submit application with multi-file upload
 const submitApplication = async (req, res) => {
   const { firstName, lastName, gender, age, phone, districtId, blockId, village, qualification, experience } = req.body;
@@ -205,8 +210,7 @@ const updateStatus = async (req, res) => {
 
       // Seeding local inventory (inventory_rhp) for standard power ranges
       // We will seed standard reading powers (from +1.00 to +3.00 in steps of +0.25)
-      const standardPowers = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00];
-      for (const power of standardPowers) {
+      for (const power of STANDARD_READING_POWERS) {
         const powerStr = power.toFixed(2);
         const sku = `RD-SPH+${powerStr}-CYL-0.00`;
         const itemName = `Reading Glasses SPH +${powerStr}`;
@@ -214,8 +218,8 @@ const updateStatus = async (req, res) => {
         await connection.query(
           `INSERT INTO inventory_rhp 
            (rhp_id, item_name, sku, glass_type, left_power_sph, right_power_sph, left_power_cyl, right_power_cyl, quantity, safety_stock_level, unit_price) 
-           VALUES (?, ?, ?, 'reading', ?, ?, 0.00, 0.00, 0, 2, 120.00)`,
-          [rhpId, itemName, sku, power, power]
+           VALUES (?, ?, ?, 'reading', ?, ?, 0.00, 0.00, 0, ?, ?)`,
+          [rhpId, itemName, sku, power, power, DEFAULT_SAFETY_STOCK, DEFAULT_UNIT_PRICE]
         );
       }
     }

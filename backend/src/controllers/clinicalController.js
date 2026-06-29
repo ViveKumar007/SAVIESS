@@ -1,5 +1,8 @@
 const db = require('../config/db');
 
+// ── Named constants (previously magic numbers) ──
+const DEFAULT_REFERRAL_FACILITY = 'Saviess Base Hospital';
+
 // Helper to escape special characters for PDF string literals
 const pdfEscape = (str) => {
   if (!str) return '';
@@ -136,8 +139,8 @@ const logScreening = async (req, res) => {
     if (referralRecommended) {
       await db.query(
         `INSERT INTO referrals (screening_id, patient_id, referred_by_rhp_id, referred_to_facility, referral_reason, status) 
-         VALUES (?, ?, ?, 'Saviess Base Hospital', ?, 'pending')`,
-        [screeningId, parseInt(patientId), rhpId, screeningType === 'cataract_suspect' ? 'cataract' : 'severe_refractive_error']
+         VALUES (?, ?, ?, ?, ?, 'pending')`,
+        [screeningId, parseInt(patientId), rhpId, DEFAULT_REFERRAL_FACILITY, screeningType === 'cataract_suspect' ? 'cataract' : 'severe_refractive_error']
       );
     }
 

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import io from 'socket.io-client';
 import { LogOut, MapPin, Navigation, Camera, Calendar, User, CheckCircle, ShieldAlert, Compass } from 'lucide-react';
+import { API, SOCKET_URL } from '../api';
 
 const FODashboard = () => {
   const [rhps, setRhps] = useState([]);
@@ -46,7 +47,7 @@ const FODashboard = () => {
     fetchRhps();
 
     // Setup Socket connection for real-time geolocation tracking
-    socketRef.current = io('http://localhost:5000', {
+    socketRef.current = io(SOCKET_URL, {
       auth: { token: `Bearer ${token}` }
     });
 
@@ -58,7 +59,7 @@ const FODashboard = () => {
 
   const fetchRhps = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/v1/rhps', {
+      const res = await axios.get(`${API}/rhps`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success) {
@@ -127,15 +128,26 @@ const FODashboard = () => {
     socketRef.current.emit('fo_start_tracking');
 
     // 2. Start tracking loop: capture and emit coordinates every 60 seconds
-    const sendLocation = (position) => {
+    const sendLocation = async (position) => {
       const { latitude, longitude, accuracy } = position.coords;
       setCurrentCoords({ latitude, longitude });
+
+      // Read real device battery level via Battery Status API (with graceful fallback)
+      let batteryLevel = null;
+      try {
+        if (navigator.getBattery) {
+          const battery = await navigator.getBattery();
+          batteryLevel = Math.round(battery.level * 100);
+        }
+      } catch (e) {
+        // Battery API not supported or permission denied — send null
+      }
 
       socketRef.current.emit('fo_location_update', {
         latitude,
         longitude,
         accuracy,
-        batteryLevel: 90 // Default mockup battery
+        batteryLevel
       });
     };
 
@@ -195,7 +207,7 @@ const FODashboard = () => {
     }
 
     try {
-      const res = await axios.post('http://localhost:5000/api/v1/visits/log', formData, {
+      const res = await axios.post(`${API}/visits/log`, formData, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'

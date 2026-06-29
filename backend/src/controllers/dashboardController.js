@@ -1,8 +1,28 @@
 const db = require('../config/db');
 
+// ── Named constants (previously magic numbers) ──
+const TOOLKIT_LOW_STOCK_THRESHOLD = 5;
+const FO_LOCATION_STALENESS_MINUTES = 30;
+const DEFAULT_PAGE_LIMIT = 100;
+
+// Diagnostic helper: verify active database connection and name
+const verifyDbConnection = async () => {
+  try {
+    const [rows] = await db.query('SELECT DATABASE() as db_name');
+    return rows[0]?.db_name || null;
+  } catch (err) {
+    console.error('[DB-CHECK] Connection verification failed:', err.message);
+    return null;
+  }
+};
+
 // Consolidated dashboard stats summary
 const getDashboardSummary = async (req, res) => {
+  const startTime = Date.now();
   try {
+    const activeDb = await verifyDbConnection();
+    console.log(`[DASHBOARD] getDashboardSummary called | Active DB: ${activeDb} | User: ${req.user?.userId} (${req.user?.role})`);
+
     // 1. RHP Stats
     const [rhpRaw] = await db.query('SELECT status, COUNT(*) as count FROM rhps GROUP BY status');
     const rhpStats = { active: 0, suspended: 0, inactive: 0, total: 0 };
@@ -37,7 +57,7 @@ const getDashboardSummary = async (req, res) => {
     };
 
     // 5. Toolkit inventory counts with low stock warning flag
-    const [toolkitRaw] = await db.query('SELECT *, (available_quantity <= 5) as lowStock FROM toolkit_inventory');
+    const [toolkitRaw] = await db.query('SELECT *, (available_quantity <= ?) as lowStock FROM toolkit_inventory', [TOOLKIT_LOW_STOCK_THRESHOLD]);
     const toolkitCounts = {
       totalItems: toolkitRaw.length,
       totalQuantity: toolkitRaw.reduce((acc, c) => acc + c.total_quantity, 0),
@@ -83,8 +103,11 @@ const getDashboardSummary = async (req, res) => {
 
     // 10. Field Officers currently online
     const [foOnline] = await db.query(
-      'SELECT COUNT(*) as count FROM fo_live_location WHERE last_updated >= NOW() - INTERVAL 30 MINUTE'
+      `SELECT COUNT(*) as count FROM fo_live_location WHERE last_updated >= NOW() - INTERVAL ${FO_LOCATION_STALENESS_MINUTES} MINUTE`
     );
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[DASHBOARD] getDashboardSummary completed in ${elapsed}ms | RHPs: ${rhpStats.total}, Screenings: ${screeningStats.totalScreened}, Dispensings: ${dispensingStats.totalGlassesSold}`);
 
     res.json({
       success: true,
@@ -102,7 +125,9 @@ const getDashboardSummary = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get dashboard summary error:', error);
+    const elapsed = Date.now() - startTime;
+    console.error(`[DASHBOARD] getDashboardSummary FAILED after ${elapsed}ms:`, error.message);
+    console.error('[DASHBOARD] Full error stack:', error.stack);
     res.status(500).json({ success: false, error: 'Database error: ' + error.message });
   }
 };
@@ -141,10 +166,14 @@ const getFoDailySummary = async (req, res) => {
 
 // Get all patients registered across all RHPs (admin view)
 const getAllPatients = async (req, res) => {
-  const { search, startDate, endDate, page = 1, limit = 100 } = req.query;
+  const { search, startDate, endDate, page = 1, limit = DEFAULT_PAGE_LIMIT } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
+  const startTime = Date.now();
 
   try {
+    const activeDb = await verifyDbConnection();
+    console.log(`[ADMIN-DATA] getAllPatients | DB: ${activeDb} | Filters: search=${search || 'none'}, startDate=${startDate || 'none'}, endDate=${endDate || 'none'}, page=${page}`);
+
     let whereClause = 'WHERE 1=1';
     const params = [];
 
@@ -182,19 +211,28 @@ const getAllPatients = async (req, res) => {
     params.push(parseInt(limit), offset);
 
     const [patients] = await db.query(dataQuery, params);
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[ADMIN-DATA] getAllPatients completed in ${elapsed}ms | Total: ${countResult[0].total}, Returned: ${patients.length}`);
+
     res.json({ success: true, total: countResult[0].total, page: parseInt(page), data: patients });
   } catch (error) {
-    console.error('Get all patients error:', error);
+    const elapsed = Date.now() - startTime;
+    console.error(`[ADMIN-DATA] getAllPatients FAILED after ${elapsed}ms:`, error.message);
+    console.error('[ADMIN-DATA] Stack:', error.stack);
     res.status(500).json({ success: false, error: 'Database error: ' + error.message });
   }
 };
 
 // Get all screenings logged by all RHPs (admin view)
 const getAllScreenings = async (req, res) => {
-  const { search, startDate, endDate, page = 1, limit = 100 } = req.query;
+  const { search, startDate, endDate, page = 1, limit = DEFAULT_PAGE_LIMIT } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
+  const startTime = Date.now();
 
   try {
+    console.log(`[ADMIN-DATA] getAllScreenings | Filters: search=${search || 'none'}, startDate=${startDate || 'none'}, endDate=${endDate || 'none'}, page=${page}`);
+
     let whereClause = 'WHERE 1=1';
     const params = [];
 
@@ -240,19 +278,28 @@ const getAllScreenings = async (req, res) => {
     params.push(parseInt(limit), offset);
 
     const [screenings] = await db.query(dataQuery, params);
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[ADMIN-DATA] getAllScreenings completed in ${elapsed}ms | Total: ${countResult[0].total}, Returned: ${screenings.length}`);
+
     res.json({ success: true, total: countResult[0].total, page: parseInt(page), data: screenings });
   } catch (error) {
-    console.error('Get all screenings error:', error);
+    const elapsed = Date.now() - startTime;
+    console.error(`[ADMIN-DATA] getAllScreenings FAILED after ${elapsed}ms:`, error.message);
+    console.error('[ADMIN-DATA] Stack:', error.stack);
     res.status(500).json({ success: false, error: 'Database error: ' + error.message });
   }
 };
 
 // Get all glass dispensings recorded by all RHPs (admin view)
 const getAllDispensings = async (req, res) => {
-  const { search, startDate, endDate, page = 1, limit = 100 } = req.query;
+  const { search, startDate, endDate, page = 1, limit = DEFAULT_PAGE_LIMIT } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
+  const startTime = Date.now();
 
   try {
+    console.log(`[ADMIN-DATA] getAllDispensings | Filters: search=${search || 'none'}, startDate=${startDate || 'none'}, endDate=${endDate || 'none'}, page=${page}`);
+
     let whereClause = 'WHERE 1=1';
     const params = [];
 
@@ -299,19 +346,28 @@ const getAllDispensings = async (req, res) => {
     params.push(parseInt(limit), offset);
 
     const [dispensings] = await db.query(dataQuery, params);
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[ADMIN-DATA] getAllDispensings completed in ${elapsed}ms | Total: ${countResult[0].total}, Returned: ${dispensings.length}`);
+
     res.json({ success: true, total: countResult[0].total, page: parseInt(page), data: dispensings });
   } catch (error) {
-    console.error('Get all dispensings error:', error);
+    const elapsed = Date.now() - startTime;
+    console.error(`[ADMIN-DATA] getAllDispensings FAILED after ${elapsed}ms:`, error.message);
+    console.error('[ADMIN-DATA] Stack:', error.stack);
     res.status(500).json({ success: false, error: 'Database error: ' + error.message });
   }
 };
 
 // Get all FO visit logs (admin view)
 const getAllVisits = async (req, res) => {
-  const { search, startDate, endDate, page = 1, limit = 100 } = req.query;
+  const { search, startDate, endDate, page = 1, limit = DEFAULT_PAGE_LIMIT } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
+  const startTime = Date.now();
 
   try {
+    console.log(`[ADMIN-DATA] getAllVisits | Filters: search=${search || 'none'}, startDate=${startDate || 'none'}, endDate=${endDate || 'none'}, page=${page}`);
+
     let whereClause = 'WHERE 1=1';
     const params = [];
 
@@ -359,9 +415,221 @@ const getAllVisits = async (req, res) => {
     params.push(parseInt(limit), offset);
 
     const [visits] = await db.query(dataQuery, params);
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[ADMIN-DATA] getAllVisits completed in ${elapsed}ms | Total: ${countResult[0].total}, Returned: ${visits.length}`);
+
     res.json({ success: true, total: countResult[0].total, page: parseInt(page), data: visits });
   } catch (error) {
-    console.error('Get all visits error:', error);
+    const elapsed = Date.now() - startTime;
+    console.error(`[ADMIN-DATA] getAllVisits FAILED after ${elapsed}ms:`, error.message);
+    console.error('[ADMIN-DATA] Stack:', error.stack);
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+};
+
+// ============================================================================
+// PROGRAM DIRECTOR — State-level aggregated summary
+// ============================================================================
+const getPdSummary = async (req, res) => {
+  try {
+    // 1. Total RHPs, FOs, Partners across all districts
+    const [rhpCount] = await db.query('SELECT COUNT(*) as total, SUM(status="active") as active FROM rhps');
+    const [foCount] = await db.query('SELECT COUNT(*) as total, SUM(status="active") as active FROM field_officers');
+
+    let partnerCount = { total: 0, active: 0 };
+    try {
+      const [pCount] = await db.query('SELECT COUNT(*) as total, SUM(status="active") as active FROM partners');
+      partnerCount = pCount[0];
+    } catch (e) { /* partners table may not exist yet */ }
+
+    // 2. Overall screening & dispensing totals
+    const [screenTotals] = await db.query('SELECT COUNT(*) as total, COALESCE(SUM(referral_recommended), 0) as referrals FROM screenings');
+    const [dispenseTotals] = await db.query('SELECT COUNT(*) as total, COALESCE(SUM(cost), 0) as totalCost, COALESCE(SUM(amount_paid), 0) as totalPaid, COALESCE(SUM(subsidy_amount), 0) as totalSubsidy FROM glass_dispensing');
+
+    // 3. Training fees financial summary
+    let trainingFees = { totalCharged: 0, totalPaid: 0 };
+    try {
+      const [tfRaw] = await db.query('SELECT COALESCE(SUM(amount_charged), 0) as totalCharged, COALESCE(SUM(amount_paid), 0) as totalPaid FROM training_fees');
+      trainingFees = { totalCharged: parseFloat(tfRaw[0].totalCharged), totalPaid: parseFloat(tfRaw[0].totalPaid) };
+    } catch (e) { /* table may be empty */ }
+
+    // 4. District performance breakdown
+    const [districtPerformance] = await db.query(`
+      SELECT d.id as district_id, d.name as district_name,
+             COUNT(DISTINCT r.id) as rhp_count,
+             COALESCE(SUM(r.total_patients_screened), 0) as total_screened,
+             COALESCE(SUM(r.total_glasses_dispensed), 0) as total_dispensed
+      FROM districts d
+      LEFT JOIN rhps r ON r.district_id = d.id
+      GROUP BY d.id, d.name
+      ORDER BY d.name ASC
+    `);
+
+    // 5. Revenue by district
+    const [revenueByDistrict] = await db.query(`
+      SELECT d.name as district_name,
+             COUNT(g.id) as glasses_sold,
+             COALESCE(SUM(g.cost), 0) as total_cost,
+             COALESCE(SUM(g.amount_paid), 0) as total_paid,
+             COALESCE(SUM(g.subsidy_amount), 0) as total_subsidy
+      FROM glass_dispensing g
+      JOIN rhps r ON g.dispensed_by_rhp_id = r.id
+      JOIN districts d ON r.district_id = d.id
+      GROUP BY d.id, d.name
+      ORDER BY total_paid DESC
+    `);
+
+    // 6. Monthly screening trends (last 12 months)
+    const [monthlyScreenings] = await db.query(`
+      SELECT DATE_FORMAT(screening_date, '%b %Y') as month,
+             COUNT(*) as count
+      FROM screenings
+      GROUP BY DATE_FORMAT(screening_date, '%Y-%m'), DATE_FORMAT(screening_date, '%b %Y')
+      ORDER BY DATE_FORMAT(screening_date, '%Y-%m') ASC
+      LIMIT 12
+    `);
+
+    // 7. Monthly dispensing trends (last 12 months)
+    const [monthlyDispensings] = await db.query(`
+      SELECT DATE_FORMAT(dispensing_date, '%b %Y') as month,
+             COUNT(*) as count,
+             COALESCE(SUM(amount_paid), 0) as revenue
+      FROM glass_dispensing
+      GROUP BY DATE_FORMAT(dispensing_date, '%Y-%m'), DATE_FORMAT(dispensing_date, '%b %Y')
+      ORDER BY DATE_FORMAT(dispensing_date, '%Y-%m') ASC
+      LIMIT 12
+    `);
+
+    // 8. Application pipeline stats
+    const [appPipeline] = await db.query('SELECT status, COUNT(*) as count FROM rhp_applications GROUP BY status');
+
+    res.json({
+      success: true,
+      data: {
+        counts: {
+          totalRhps: rhpCount[0].total || 0,
+          activeRhps: parseInt(rhpCount[0].active) || 0,
+          totalFos: foCount[0].total || 0,
+          activeFos: parseInt(foCount[0].active) || 0,
+          totalPartners: partnerCount.total || 0,
+          activePartners: parseInt(partnerCount.active) || 0
+        },
+        screeningStats: {
+          total: screenTotals[0].total || 0,
+          referrals: parseInt(screenTotals[0].referrals) || 0
+        },
+        financials: {
+          glassesSold: dispenseTotals[0].total || 0,
+          totalRevenue: parseFloat(dispenseTotals[0].totalCost) || 0,
+          totalCollected: parseFloat(dispenseTotals[0].totalPaid) || 0,
+          totalSubsidy: parseFloat(dispenseTotals[0].totalSubsidy) || 0,
+          outstanding: (parseFloat(dispenseTotals[0].totalCost) || 0) - (parseFloat(dispenseTotals[0].totalPaid) || 0),
+          trainingFeesCharged: trainingFees.totalCharged,
+          trainingFeesPaid: trainingFees.totalPaid
+        },
+        districtPerformance,
+        revenueByDistrict,
+        monthlyScreenings,
+        monthlyDispensings,
+        appPipeline
+      }
+    });
+  } catch (error) {
+    console.error('Get PD summary error:', error);
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+};
+
+// ============================================================================
+// FIELD MANAGER — Scoped summary for managed FOs
+// ============================================================================
+const getFmSummary = async (req, res) => {
+  const managerId = req.user.userId;
+
+  try {
+    // 1. Managed field officers
+    const [managedFos] = await db.query(`
+      SELECT fo.id as fo_id, fo.status, u.first_name, u.last_name, u.phone,
+             d.name as district_name, b.name as block_name,
+             (SELECT COUNT(*) FROM fo_visits v WHERE v.fo_id = fo.id AND v.visit_date = CURDATE()) as visits_today,
+             (SELECT COUNT(*) FROM fo_visits v WHERE v.fo_id = fo.id AND MONTH(v.visit_date) = MONTH(CURDATE()) AND YEAR(v.visit_date) = YEAR(CURDATE())) as visits_this_month
+      FROM field_officers fo
+      JOIN users u ON fo.user_id = u.id
+      JOIN districts d ON fo.district_id = d.id
+      JOIN blocks b ON fo.block_id = b.id
+      WHERE fo.manager_id = ?
+      ORDER BY u.first_name ASC
+    `, [managerId]);
+
+    const foIds = managedFos.map(f => f.fo_id);
+
+    // 2. Pending field reports count
+    let pendingReports = 0;
+    let totalReports = 0;
+    if (foIds.length > 0) {
+      const placeholders = foIds.map(() => '?').join(',');
+      const [reportCounts] = await db.query(
+        `SELECT COUNT(*) as total, SUM(status = 'pending') as pending FROM field_reports WHERE fo_id IN (${placeholders})`,
+        foIds
+      );
+      pendingReports = parseInt(reportCounts[0].pending) || 0;
+      totalReports = reportCounts[0].total || 0;
+    }
+
+    // 3. RHP onboarding pipeline (applications)
+    const [appStats] = await db.query('SELECT status, COUNT(*) as count FROM rhp_applications GROUP BY status');
+    const appPipeline = { applied: 0, under_review: 0, interviewed: 0, training_scheduled: 0, approved: 0, rejected: 0, total: 0 };
+    appStats.forEach(row => {
+      if (appPipeline[row.status] !== undefined) appPipeline[row.status] = row.count;
+      appPipeline.total += row.count;
+    });
+
+    // 4. Training batches summary
+    const [trainingBatches] = await db.query(`
+      SELECT tb.id, tb.name, tb.start_date, tb.end_date, tb.trainer_name, tb.status,
+             (SELECT COUNT(*) FROM training_attendance ta WHERE ta.batch_id = tb.id) as total_attendance,
+             (SELECT COUNT(DISTINCT ta.trainee_user_id) FROM training_attendance ta WHERE ta.batch_id = tb.id) as unique_trainees
+      FROM training_batches tb
+      ORDER BY tb.start_date DESC
+      LIMIT 10
+    `);
+
+    // 5. Pending indent requests
+    const [pendingIndents] = await db.query(`
+      SELECT i.id, i.request_date, i.total_items, i.status, i.comments,
+             r.center_name as rhp_center,
+             ru.first_name as rhp_first, ru.last_name as rhp_last
+      FROM indents i
+      JOIN rhps r ON i.requester_rhp_id = r.id
+      JOIN users ru ON r.user_id = ru.id
+      WHERE i.status IN ('pending_approval', 'draft')
+      ORDER BY i.request_date DESC
+      LIMIT 20
+    `);
+
+    // 6. Overall quick stats
+    const [totalVisitsToday] = await db.query(
+      'SELECT COUNT(*) as count FROM fo_visits WHERE visit_date = CURDATE()'
+    );
+
+    res.json({
+      success: true,
+      data: {
+        managedFos,
+        reports: { pending: pendingReports, total: totalReports },
+        appPipeline,
+        trainingBatches,
+        pendingIndents,
+        quickStats: {
+          totalFos: managedFos.length,
+          activeFos: managedFos.filter(f => f.status === 'active').length,
+          visitsToday: totalVisitsToday[0].count || 0
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get FM summary error:', error);
     res.status(500).json({ success: false, error: 'Database error: ' + error.message });
   }
 };
@@ -372,5 +640,7 @@ module.exports = {
   getAllPatients,
   getAllScreenings,
   getAllDispensings,
-  getAllVisits
+  getAllVisits,
+  getPdSummary,
+  getFmSummary
 };

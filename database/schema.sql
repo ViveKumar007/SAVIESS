@@ -5,8 +5,14 @@
 -- Design Version: 1.0.0
 -- ============================================================================
 
+-- Create local database if running locally (ignored on TiDB Cloud which uses 'test')
 CREATE DATABASE IF NOT EXISTS saviess_vep CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Use the database configured in your .env DB_NAME
+-- For TiDB Cloud: DB_NAME=test  |  For local MySQL: DB_NAME=saviess_vep
+-- Uncomment the appropriate line below:
 USE saviess_vep;
+-- USE test;
 
 -- Disable foreign key checks temporarily to avoid dependency creation order issues
 SET FOREIGN_KEY_CHECKS = 0;
@@ -15,8 +21,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- 1. Table: districts
 -- Purpose: Master table containing list of operational districts in Bihar
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS districts;
-CREATE TABLE districts (
+CREATE TABLE IF NOT EXISTS districts (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -28,8 +33,7 @@ CREATE TABLE districts (
 -- 2. Table: blocks
 -- Purpose: Master table containing administrative blocks mapped to districts
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS blocks;
-CREATE TABLE blocks (
+CREATE TABLE IF NOT EXISTS blocks (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     district_id INT UNSIGNED NOT NULL,
     name VARCHAR(100) NOT NULL,
@@ -45,8 +49,7 @@ CREATE TABLE blocks (
 -- 3. Table: users
 -- Purpose: Base user account model supporting JWT Auth and RBAC
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS users;
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(150) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
@@ -67,8 +70,7 @@ CREATE TABLE users (
 -- 4. Table: rhp_applications
 -- Purpose: Tracking system for Rural Health Provider (RHP) / Vision Entrepreneur applicants
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS rhp_applications;
-CREATE TABLE rhp_applications (
+CREATE TABLE IF NOT EXISTS rhp_applications (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
@@ -98,8 +100,7 @@ CREATE TABLE rhp_applications (
 -- 5. Table: rhps
 -- Purpose: Core details of Rural Health Providers (Vision Entrepreneurs) once onboarded
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS rhps;
-CREATE TABLE rhps (
+CREATE TABLE IF NOT EXISTS rhps (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL UNIQUE,
     application_id INT UNSIGNED DEFAULT NULL UNIQUE,
@@ -124,8 +125,7 @@ CREATE TABLE rhps (
 -- 6. Table: field_officers
 -- Purpose: Core details of Field Officers responsible for tracking and managing RHPs
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS field_officers;
-CREATE TABLE field_officers (
+CREATE TABLE IF NOT EXISTS field_officers (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL UNIQUE,
     manager_id INT UNSIGNED NULL, -- References users.id (role program_director/field_manager)
@@ -146,8 +146,7 @@ CREATE TABLE field_officers (
 -- 7. Table: proof_uploads
 -- Purpose: Centrally registers upload attachments linked to Cloudinary URLs
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS proof_uploads;
-CREATE TABLE proof_uploads (
+CREATE TABLE IF NOT EXISTS proof_uploads (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     uploader_user_id INT UNSIGNED NOT NULL,
     file_name VARCHAR(255) NOT NULL,
@@ -165,8 +164,7 @@ CREATE TABLE proof_uploads (
 -- 8. Table: fo_visits
 -- Purpose: Logging daily visits made by Field Officers to RHPs or centers
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS fo_visits;
-CREATE TABLE fo_visits (
+CREATE TABLE IF NOT EXISTS fo_visits (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     fo_id INT UNSIGNED NOT NULL,
     target_rhp_id INT UNSIGNED NULL, -- Optional if visit is to an RHP
@@ -193,8 +191,7 @@ CREATE TABLE fo_visits (
 -- 9. Table: fo_live_location
 -- Purpose: Holds the most recent GPS location status of online Field Officers
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS fo_live_location;
-CREATE TABLE fo_live_location (
+CREATE TABLE IF NOT EXISTS fo_live_location (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     fo_id INT UNSIGNED NOT NULL UNIQUE,
     latitude DECIMAL(10, 8) NOT NULL,
@@ -210,8 +207,7 @@ CREATE TABLE fo_live_location (
 -- 10. Table: fo_location_history
 -- Purpose: Auditing breadcrumbs/history of FO movements for real-time tracking playback
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS fo_location_history;
-CREATE TABLE fo_location_history (
+CREATE TABLE IF NOT EXISTS fo_location_history (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     fo_id INT UNSIGNED NOT NULL,
     latitude DECIMAL(10, 8) NOT NULL,
@@ -227,8 +223,7 @@ CREATE TABLE fo_location_history (
 -- 11. Table: training_batches
 -- Purpose: Cohorts organized by the program for RHP capacity building
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS training_batches;
-CREATE TABLE training_batches (
+CREATE TABLE IF NOT EXISTS training_batches (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(150) NOT NULL UNIQUE,
     start_date DATE NOT NULL,
@@ -246,8 +241,7 @@ CREATE TABLE training_batches (
 -- 12. Table: training_attendance
 -- Purpose: Log attendance registers per trainee per training date
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS training_attendance;
-CREATE TABLE training_attendance (
+CREATE TABLE IF NOT EXISTS training_attendance (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     batch_id INT UNSIGNED NOT NULL,
     trainee_user_id INT UNSIGNED NOT NULL, -- Links to users (typically roles = 'rhp' or applicants)
@@ -266,8 +260,7 @@ CREATE TABLE training_attendance (
 -- 13. Table: training_fees
 -- Purpose: Capture course fees and financials related to RHP trainingbatches
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS training_fees;
-CREATE TABLE training_fees (
+CREATE TABLE IF NOT EXISTS training_fees (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     batch_id INT UNSIGNED NOT NULL,
     trainee_user_id INT UNSIGNED NOT NULL,
@@ -290,8 +283,7 @@ CREATE TABLE training_fees (
 -- 14. Table: patients
 -- Purpose: Patient registry capturing demographic and basic identifier details
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS patients;
-CREATE TABLE patients (
+CREATE TABLE IF NOT EXISTS patients (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
@@ -315,8 +307,7 @@ CREATE TABLE patients (
 -- 15. Table: screenings
 -- Purpose: Captures refraction screening details and visual acuity results
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS screenings;
-CREATE TABLE screenings (
+CREATE TABLE IF NOT EXISTS screenings (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     patient_id INT UNSIGNED NOT NULL,
     screened_by_rhp_id INT UNSIGNED NOT NULL,
@@ -353,8 +344,7 @@ CREATE TABLE screenings (
 -- 16. Table: glass_dispensing
 -- Purpose: Records spectacles dispensed to patient, payment received and invoices
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS glass_dispensing;
-CREATE TABLE glass_dispensing (
+CREATE TABLE IF NOT EXISTS glass_dispensing (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     screening_id INT UNSIGNED NOT NULL,
     patient_id INT UNSIGNED NOT NULL,
@@ -390,8 +380,7 @@ CREATE TABLE glass_dispensing (
 -- 17. Table: inventory_central
 -- Purpose: Central warehouse inventory tracked by power combination SKU
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS inventory_central;
-CREATE TABLE inventory_central (
+CREATE TABLE IF NOT EXISTS inventory_central (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     item_name VARCHAR(150) NOT NULL,
     sku VARCHAR(100) NOT NULL UNIQUE, -- E.g. RD-SPH+1.50-CYL-0.00 (Reading, SPH +1.50, CYL 0)
@@ -416,8 +405,7 @@ CREATE TABLE inventory_central (
 -- 18. Table: inventory_rhp
 -- Purpose: Per-RHP local inventory stock of glasses tracked by SKU and power
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS inventory_rhp;
-CREATE TABLE inventory_rhp (
+CREATE TABLE IF NOT EXISTS inventory_rhp (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     rhp_id INT UNSIGNED NOT NULL,
     item_name VARCHAR(150) NOT NULL,
@@ -443,8 +431,7 @@ CREATE TABLE inventory_rhp (
 -- 19. Table: toolkit_inventory
 -- Purpose: Master catalog tracking reusable toolkits (trial lens, charts, case)
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS toolkit_inventory;
-CREATE TABLE toolkit_inventory (
+CREATE TABLE IF NOT EXISTS toolkit_inventory (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     item_name VARCHAR(150) NOT NULL UNIQUE,
     sku VARCHAR(100) NOT NULL UNIQUE,
@@ -460,8 +447,7 @@ CREATE TABLE toolkit_inventory (
 -- 20. Table: toolkit_issuance_log
 -- Purpose: Tracking logs of toolkits issued/returned/damaged/lost for RHPs
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS toolkit_issuance_log;
-CREATE TABLE toolkit_issuance_log (
+CREATE TABLE IF NOT EXISTS toolkit_issuance_log (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     rhp_id INT UNSIGNED NOT NULL,
     toolkit_item_id INT UNSIGNED NOT NULL,
@@ -484,8 +470,7 @@ CREATE TABLE toolkit_issuance_log (
 -- 21. Table: indents
 -- Purpose: Central head-requisition/indent tracking submitted by RHPs
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS indents;
-CREATE TABLE indents (
+CREATE TABLE IF NOT EXISTS indents (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     requester_rhp_id INT UNSIGNED NOT NULL,
     field_officer_id INT UNSIGNED NULL, -- Compiled/verified by Field Officer
@@ -510,8 +495,7 @@ CREATE TABLE indents (
 -- 22. Table: indent_items
 -- Purpose: Line items requested under a specific central indent
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS indent_items;
-CREATE TABLE indent_items (
+CREATE TABLE IF NOT EXISTS indent_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     indent_id INT UNSIGNED NOT NULL,
     item_name VARCHAR(150) NOT NULL,
@@ -535,8 +519,7 @@ CREATE TABLE indent_items (
 -- 23. Table: referrals
 -- Purpose: Referral directory tracking cases recommended to base hospital (e.g. cataracts)
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS referrals;
-CREATE TABLE referrals (
+CREATE TABLE IF NOT EXISTS referrals (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     screening_id INT UNSIGNED NOT NULL,
     patient_id INT UNSIGNED NOT NULL,

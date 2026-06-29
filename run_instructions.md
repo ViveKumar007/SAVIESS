@@ -73,6 +73,11 @@ Open your web browser and go to:
 👉 **[http://localhost:5173](http://localhost:5173)**
 
 Log in using any of the following credentials (password is **`Saviess@2026`** for all accounts):
-* **Admin Dashboard**: `admin@saviess.org`
-* **Field Officer Dashboard**: `fo@saviess.org`
-* **Rural Health Provider Interface**: `rhp@saviess.org`
+
+| Role | Email |
+|---|---|
+| **Admin** (`super_admin`) | `admin@saviess.org` |
+| **Program Director** | `pd@saviess.org` |
+| **Field Manager** | `manager@saviess.org` |
+| **Field Officer** | `fo@saviess.org` |
+| **Rural Health Provider (RHP)** | `rhp@saviess.org` |

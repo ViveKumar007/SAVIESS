@@ -20,7 +20,11 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
         return <Navigate to="/rhp-dashboard" replace />;
       } else if (user.role === 'field_officer') {
         return <Navigate to="/fo-dashboard" replace />;
-      } else if (['super_admin', 'program_director', 'field_manager'].includes(user.role)) {
+      } else if (user.role === 'program_director') {
+        return <Navigate to="/pd-dashboard" replace />;
+      } else if (user.role === 'field_manager') {
+        return <Navigate to="/fm-dashboard" replace />;
+      } else if (user.role === 'super_admin') {
         return <Navigate to="/admin-dashboard" replace />;
       }
       return <Navigate to="/login" replace />;

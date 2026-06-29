@@ -1,5 +1,9 @@
 const db = require('../config/db');
 
+// ── Named constants (previously magic numbers) ──
+const TOOLKIT_LOW_STOCK_THRESHOLD = 5;
+const DEFAULT_UNIT_PRICE = 120.00;
+
 // Get Central Warehouse Inventory
 const getCentralInventory = async (req, res) => {
   const { glassType, lowStock } = req.query;
@@ -152,7 +156,7 @@ const getToolkitInventory = async (req, res) => {
     const [items] = await db.query('SELECT * FROM toolkit_inventory');
     const enriched = items.map(item => ({
       ...item,
-      lowStock: item.available_quantity <= 5
+      lowStock: item.available_quantity <= TOOLKIT_LOW_STOCK_THRESHOLD
     }));
     res.json({ success: true, data: enriched });
   } catch (error) {
@@ -306,7 +310,7 @@ const raiseIndent = async (req, res) => {
           item.rightPowerSph ? parseFloat(item.rightPowerSph) : 0,
           item.leftPowerCyl ? parseFloat(item.leftPowerCyl) : 0,
           item.rightPowerCyl ? parseFloat(item.rightPowerCyl) : 0,
-          parseInt(item.quantityRequested), parseFloat(item.unitPrice || 120.00)
+          parseInt(item.quantityRequested), parseFloat(item.unitPrice || DEFAULT_UNIT_PRICE)
         ]
       );
     }

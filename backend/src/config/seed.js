@@ -1,6 +1,11 @@
 const db = require('./db');
 const bcrypt = require('bcrypt');
 
+// ── Named constants (match authController / applicationController) ──
+const DEFAULT_UNIT_PRICE = 120.00;
+const DEFAULT_SAFETY_STOCK_RHP = 2;
+const DEFAULT_SAFETY_STOCK_CENTRAL = 10;
+
 async function seed() {
   console.log('Starting database seeding...');
   const connection = await db.getConnection();
@@ -34,6 +39,15 @@ async function seed() {
       adminUserId = res.insertId;
     } else {
       adminUserId = adminCheck[0].id;
+    }
+
+    // Program Director
+    const [pdCheck] = await connection.query('SELECT id FROM users WHERE email = "pd@saviess.org"');
+    if (pdCheck.length === 0) {
+      await connection.query(
+        'INSERT INTO users (email, password_hash, first_name, last_name, role, phone, is_active) VALUES ("pd@saviess.org", ?, "Meera", "Sharma", "program_director", "+919999000005", 1)',
+        [defaultHash]
+      );
     }
 
     // Field Manager
@@ -90,8 +104,8 @@ async function seed() {
         await connection.query(
           `INSERT IGNORE INTO inventory_rhp 
            (rhp_id, item_name, sku, glass_type, left_power_sph, right_power_sph, left_power_cyl, right_power_cyl, quantity, safety_stock_level, unit_price) 
-           VALUES (?, ?, ?, "reading", ?, ?, 0.00, 0.00, 5, 2, 120.00)`,
-          [rhpId, `Reading Glasses SPH +${pStr}`, `RD-SPH+${pStr}-CYL-0.00`, p, p]
+           VALUES (?, ?, ?, "reading", ?, ?, 0.00, 0.00, 5, ?, ?)`,
+          [rhpId, `Reading Glasses SPH +${pStr}`, `RD-SPH+${pStr}-CYL-0.00`, p, p, DEFAULT_SAFETY_STOCK_RHP, DEFAULT_UNIT_PRICE]
         );
       }
     }
@@ -110,9 +124,9 @@ async function seed() {
       await connection.query(
         `INSERT INTO inventory_central 
          (item_name, sku, glass_type, left_power_sph, right_power_sph, left_power_cyl, right_power_cyl, quantity, safety_stock_level, unit_price, supplier_info, last_restocked_at) 
-         VALUES (?, ?, 'reading', ?, ?, 0.00, 0.00, ?, 10, 120.00, 'VisionSpring Central supplier', CURRENT_TIMESTAMP)
+         VALUES (?, ?, 'reading', ?, ?, 0.00, 0.00, ?, ?, ?, 'VisionSpring Central supplier', CURRENT_TIMESTAMP)
          ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)`,
-        [item.name, item.sku, item.power, item.power, item.qty]
+        [item.name, item.sku, item.power, item.power, item.qty, DEFAULT_SAFETY_STOCK_CENTRAL, DEFAULT_UNIT_PRICE]
       );
     }
 

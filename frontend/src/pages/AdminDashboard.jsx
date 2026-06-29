@@ -4,7 +4,8 @@ import axios from 'axios';
 import io from 'socket.io-client';
 import L from 'leaflet';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Users, UserCheck, Eye, Sparkles, Box, Hammer, LogOut, AlertTriangle, MapPin, Activity, Search, Calendar, ClipboardList, Stethoscope, Glasses, FileText, ExternalLink, ChevronLeft, ChevronRight, UserPlus, X, CheckCircle, Copy, Shield } from 'lucide-react';
+import { Users, UserCheck, Eye, Sparkles, Box, Hammer, LogOut, AlertTriangle, MapPin, Activity, Search, Calendar, ClipboardList, Stethoscope, Glasses, FileText, ExternalLink, ChevronLeft, ChevronRight, UserPlus, X, CheckCircle, Copy, Shield, FileSpreadsheet, Download } from 'lucide-react';
+import { API, SOCKET_URL } from '../api';
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
@@ -39,6 +40,22 @@ const AdminDashboard = () => {
   const [createdUser, setCreatedUser] = useState(null);
   const [copiedField, setCopiedField] = useState('');
 
+  // Active section state: 'stats' | 'createUser' | 'rhpApps'
+  const [activeSection, setActiveSection] = useState('stats');
+
+  // RHP Applications management state
+  const [rhpApps, setRhpApps] = useState([]);
+  const [rhpAppsTotal, setRhpAppsTotal] = useState(0);
+  const [rhpAppsPage, setRhpAppsPage] = useState(1);
+  const [rhpAppsLoading, setRhpAppsLoading] = useState(false);
+  const [rhpSearch, setRhpSearch] = useState('');
+  const [rhpStatusFilter, setRhpStatusFilter] = useState('');
+  const [rhpDistrictFilter, setRhpDistrictFilter] = useState('');
+  const [rhpDateStart, setRhpDateStart] = useState('');
+  const [rhpDateEnd, setRhpDateEnd] = useState('');
+  const [viewApp, setViewApp] = useState(null);
+  const [viewAppLoading, setViewAppLoading] = useState(false);
+
   const token = localStorage.getItem('accessToken');
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
@@ -46,7 +63,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     const loadDistricts = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/v1/districts', { headers: { Authorization: `Bearer ${token}` } });
+        const res = await axios.get(`${API}/districts`, { headers: { Authorization: `Bearer ${token}` } });
         if (res.data.success) setDistricts(res.data.data);
       } catch (err) { console.error('Load districts error:', err); }
     };
@@ -58,7 +75,7 @@ const AdminDashboard = () => {
     if (!formData.districtId) { setBlocks([]); return; }
     const loadBlocks = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/v1/blocks?districtId=${formData.districtId}`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await axios.get(`${API}/blocks?districtId=${formData.districtId}`, { headers: { Authorization: `Bearer ${token}` } });
         if (res.data.success) setBlocks(res.data.data);
       } catch (err) { console.error('Load blocks error:', err); }
     };
@@ -70,7 +87,7 @@ const AdminDashboard = () => {
     fetchStats();
 
     // 2. Initialize Socket.io connection with JWT auth token
-    socketRef.current = io('http://localhost:5000', {
+    socketRef.current = io(SOCKET_URL, {
       auth: { token: `Bearer ${token}` }
     });
 
@@ -146,7 +163,7 @@ const AdminDashboard = () => {
       if (dateStart) params.append('startDate', dateStart);
       if (dateEnd) params.append('endDate', dateEnd);
 
-      const res = await axios.get(`http://localhost:5000/api/v1/dashboard/${activeTab}?${params.toString()}`, {
+      const res = await axios.get(`${API}/dashboard/${activeTab}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success) {
@@ -172,7 +189,7 @@ const AdminDashboard = () => {
 
   const fetchStats = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/v1/dashboard/summary', {
+      const res = await axios.get(`${API}/dashboard/summary`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success) {
@@ -188,7 +205,7 @@ const AdminDashboard = () => {
 
   const fetchLiveLocations = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/v1/visits/live', {
+      const res = await axios.get(`${API}/visits/live`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success && res.data.data) {
@@ -296,7 +313,7 @@ const AdminDashboard = () => {
       } else {
         payload.coverageArea = formData.coverageArea;
       }
-      const res = await axios.post('http://localhost:5000/api/v1/auth/provision', payload, {
+      const res = await axios.post(`${API}/auth/provision`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success) {
@@ -313,6 +330,111 @@ const AdminDashboard = () => {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(''), 2000);
+  };
+
+  // ── RHP Applications Handlers ──
+  const fetchRhpApps = useCallback(async () => {
+    setRhpAppsLoading(true);
+    try {
+      const params = new URLSearchParams({ page: rhpAppsPage, limit: 20 });
+      if (rhpSearch) params.append('search', rhpSearch);
+      if (rhpStatusFilter) params.append('status', rhpStatusFilter);
+      if (rhpDistrictFilter) params.append('districtId', rhpDistrictFilter);
+      if (rhpDateStart) params.append('startDate', rhpDateStart);
+      if (rhpDateEnd) params.append('endDate', rhpDateEnd);
+
+      const res = await axios.get(`${API}/rhp?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) {
+        setRhpApps(res.data.data);
+        setRhpAppsTotal(res.data.total);
+      }
+    } catch (err) {
+      console.error('Fetch RHP applications error:', err);
+      setRhpApps([]);
+      setRhpAppsTotal(0);
+    }
+    setRhpAppsLoading(false);
+  }, [rhpAppsPage, rhpSearch, rhpStatusFilter, rhpDistrictFilter, rhpDateStart, rhpDateEnd, token]);
+
+  // Re-fetch RHP apps when filters/page change while on rhpApps section
+  useEffect(() => {
+    if (activeSection === 'rhpApps') fetchRhpApps();
+  }, [fetchRhpApps, activeSection]);
+
+  const handleViewApp = async (id) => {
+    setViewAppLoading(true);
+    try {
+      const res = await axios.get(`${API}/rhp/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) setViewApp(res.data.data);
+    } catch (err) {
+      console.error('View application error:', err);
+    }
+    setViewAppLoading(false);
+  };
+
+  const handleAppStatus = async (id, status) => {
+    if (!window.confirm(`Are you sure you want to ${status} this application?`)) return;
+    try {
+      const res = await axios.put(`${API}/rhp/${id}/status`, { status }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) {
+        if (res.data.createdUser) {
+          alert(`Application approved! User created.\nEmail: ${res.data.createdUser.email}\nPassword: ${res.data.createdUser.defaultPassword}`);
+        }
+        fetchRhpApps();
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to update status');
+    }
+  };
+
+  const handleDeleteApp = async (id) => {
+    if (!window.confirm('Delete this application permanently? This cannot be undone.')) return;
+    try {
+      await axios.delete(`${API}/rhp/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchRhpApps();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete application');
+    }
+  };
+
+  const handleRhpExport = async (format) => {
+    try {
+      const params = new URLSearchParams({ format });
+      if (rhpSearch) params.append('search', rhpSearch);
+      if (rhpStatusFilter) params.append('status', rhpStatusFilter);
+      if (rhpDistrictFilter) params.append('districtId', rhpDistrictFilter);
+      if (rhpDateStart) params.append('startDate', rhpDateStart);
+      if (rhpDateEnd) params.append('endDate', rhpDateEnd);
+
+      const res = await axios.get(`${API}/rhp/export?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+
+      const ext = format === 'xlsx' ? 'xlsx' : format === 'csv' ? 'csv' : 'pdf';
+      const mimeType = format === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' :
+                        format === 'csv' ? 'text/csv' : 'application/pdf';
+      const blob = new Blob([res.data], { type: mimeType });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rhp_applications.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Export failed. Please try again.');
+    }
   };
 
   if (loading) {
@@ -518,13 +640,17 @@ const AdminDashboard = () => {
             <span className="text-slate-400 text-[10px] tracking-wider uppercase mt-1 block font-medium">VEP platform</span>
           </div>
           <nav className="p-4 space-y-1">
-            <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl font-semibold text-sm cursor-pointer transition-all ${!showCreateUser ? 'bg-slate-800/80 text-teal-400 border-l-4 border-teal-500' : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'}`} onClick={() => { setShowCreateUser(false); setCreatedUser(null); }}>
+            <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl font-semibold text-sm cursor-pointer transition-all ${activeSection === 'stats' ? 'bg-slate-800/80 text-teal-400 border-l-4 border-teal-500' : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'}`} onClick={() => { setActiveSection('stats'); setCreatedUser(null); }}>
               <Activity className="w-5 h-5" />
               <span>Consolidated Stats</span>
             </div>
-            <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl font-semibold text-sm cursor-pointer transition-all ${showCreateUser ? 'bg-teal-500/15 text-teal-400 border-l-4 border-teal-500' : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'}`} onClick={() => { setShowCreateUser(true); setCreatedUser(null); setCreateError(''); }}>
+            <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl font-semibold text-sm cursor-pointer transition-all ${activeSection === 'createUser' ? 'bg-teal-500/15 text-teal-400 border-l-4 border-teal-500' : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'}`} onClick={() => { setActiveSection('createUser'); setCreatedUser(null); setCreateError(''); }}>
               <UserPlus className="w-5 h-5" />
               <span>Create User</span>
+            </div>
+            <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl font-semibold text-sm cursor-pointer transition-all ${activeSection === 'rhpApps' ? 'bg-indigo-500/15 text-indigo-400 border-l-4 border-indigo-500' : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'}`} onClick={() => { setActiveSection('rhpApps'); fetchRhpApps(); }}>
+              <FileSpreadsheet className="w-5 h-5" />
+              <span>RHP Applications</span>
             </div>
             <div className="px-4 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-widest mt-6">Logged Profile</div>
             <div className="px-4 py-2">
@@ -550,14 +676,14 @@ const AdminDashboard = () => {
         {/* ================================================================ */}
         {/* CREATE USER PANEL                                                */}
         {/* ================================================================ */}
-        {showCreateUser ? (
+        {activeSection === 'createUser' ? (
           <div className="max-w-2xl mx-auto space-y-6">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Create New User</h1>
                 <p className="text-slate-500 text-sm mt-1">Provision a Field Officer or RHP with full account and profile</p>
               </div>
-              <button onClick={() => { setShowCreateUser(false); setCreatedUser(null); }} className="p-2 rounded-xl border hover:bg-slate-50 transition-all">
+              <button onClick={() => { setActiveSection('stats'); setCreatedUser(null); }} className="p-2 rounded-xl border hover:bg-slate-50 transition-all">
                 <X className="w-5 h-5 text-slate-400" />
               </button>
             </div>
@@ -688,7 +814,7 @@ const AdminDashboard = () => {
               </form>
             )}
           </div>
-        ) : (
+        ) : activeSection === 'stats' ? (
         <>
         {/* Header bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-6 gap-4">
@@ -994,6 +1120,281 @@ const AdminDashboard = () => {
 
         </div>
 
+        </>
+        ) : (
+        <>
+        /* ================================================================ */
+        /* RHP APPLICATIONS MANAGEMENT PANEL                                */
+        /* ================================================================ */
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">RHP Applications</h1>
+              <p className="text-slate-500 text-sm mt-1">Review, approve, or reject RHP registration applications</p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button onClick={() => handleRhpExport('xlsx')} className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold transition-all">
+                <Download className="w-3.5 h-3.5" /><span>Excel</span>
+              </button>
+              <button onClick={() => handleRhpExport('csv')} className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition-all">
+                <Download className="w-3.5 h-3.5" /><span>CSV</span>
+              </button>
+              <button onClick={() => handleRhpExport('pdf')} className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition-all">
+                <Download className="w-3.5 h-3.5" /><span>PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="bg-white p-4 rounded-2xl border shadow-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="relative lg:col-span-2">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text" placeholder="Search name, mobile, aadhaar, or app ID..."
+                  value={rhpSearch} onChange={e => { setRhpSearch(e.target.value); setRhpAppsPage(1); }}
+                  className="w-full pl-9 pr-3 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-indigo-500 text-sm"
+                />
+              </div>
+              <select value={rhpStatusFilter} onChange={e => { setRhpStatusFilter(e.target.value); setRhpAppsPage(1); }}
+                className="px-3 py-2.5 border rounded-xl bg-slate-50 text-sm focus:outline-none focus:border-indigo-500">
+                <option value="">All Status</option>
+                <option value="applied">Applied</option>
+                <option value="under_review">Under Review</option>
+                <option value="interviewed">Interviewed</option>
+                <option value="training_scheduled">Training Scheduled</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <select value={rhpDistrictFilter} onChange={e => { setRhpDistrictFilter(e.target.value); setRhpAppsPage(1); }}
+                className="px-3 py-2.5 border rounded-xl bg-slate-50 text-sm focus:outline-none focus:border-indigo-500">
+                <option value="">All Districts</option>
+                {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <input type="date" value={rhpDateStart} onChange={e => { setRhpDateStart(e.target.value); setRhpAppsPage(1); }}
+                className="px-3 py-2.5 border rounded-xl bg-slate-50 text-sm focus:outline-none focus:border-indigo-500" />
+            </div>
+          </div>
+
+          {/* Applications Table */}
+          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+            {rhpAppsLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead>
+                    <tr>
+                      <th className="th-cell">App ID</th>
+                      <th className="th-cell">Full Name</th>
+                      <th className="th-cell">Mobile</th>
+                      <th className="th-cell">District</th>
+                      <th className="th-cell">State</th>
+                      <th className="th-cell">Exp (Yrs)</th>
+                      <th className="th-cell">Status</th>
+                      <th className="th-cell">Applied</th>
+                      <th className="th-cell">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rhpApps.length === 0 ? (
+                      <tr><td colSpan="9" className="text-center py-16">
+                        <div className="flex flex-col items-center space-y-3">
+                          <FileSpreadsheet className="w-10 h-10 text-slate-300" />
+                          <p className="text-slate-400 text-sm">No applications found</p>
+                        </div>
+                      </td></tr>
+                    ) : rhpApps.map((app, i) => {
+                      const statusColors = {
+                        applied: 'bg-amber-50 text-amber-700 border-amber-200',
+                        under_review: 'bg-blue-50 text-blue-700 border-blue-200',
+                        interviewed: 'bg-violet-50 text-violet-700 border-violet-200',
+                        training_scheduled: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+                        approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                        rejected: 'bg-rose-50 text-rose-700 border-rose-200',
+                      };
+                      return (
+                        <tr key={app.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                          <td className="td-cell font-mono text-xs text-indigo-600 font-bold">{app.application_code || `#${app.id}`}</td>
+                          <td className="td-cell font-semibold text-slate-800">{app.full_name || `${app.first_name} ${app.last_name}`}</td>
+                          <td className="td-cell text-xs">{app.phone || '—'}</td>
+                          <td className="td-cell">{app.district_name || '—'}</td>
+                          <td className="td-cell">{app.state || '—'}</td>
+                          <td className="td-cell text-center">{app.years_of_experience || 0}</td>
+                          <td className="td-cell">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusColors[app.status] || 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                              {app.status?.replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className="td-cell text-xs">{formatDate(app.created_at)}</td>
+                          <td className="td-cell">
+                            <div className="flex items-center space-x-1">
+                              <button onClick={() => handleViewApp(app.id)} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-all">View</button>
+                              {app.status !== 'approved' && (
+                                <button onClick={() => handleAppStatus(app.id, 'approved')} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-all">Approve</button>
+                              )}
+                              {app.status !== 'rejected' && app.status !== 'approved' && (
+                                <button onClick={() => handleAppStatus(app.id, 'rejected')} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all">Reject</button>
+                              )}
+                              <button onClick={() => handleDeleteApp(app.id)} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-500 transition-all">Del</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {/* Pagination */}
+            {rhpAppsTotal > 20 && (
+              <div className="flex items-center justify-between px-6 py-4 border-t bg-slate-50/50">
+                <span className="text-xs text-slate-500">Showing {(rhpAppsPage - 1) * 20 + 1}–{Math.min(rhpAppsPage * 20, rhpAppsTotal)} of {rhpAppsTotal}</span>
+                <div className="flex items-center space-x-2">
+                  <button disabled={rhpAppsPage <= 1} onClick={() => { setRhpAppsPage(p => p - 1); }} className="p-2 rounded-lg border hover:bg-white disabled:opacity-30 transition-all"><ChevronLeft className="w-4 h-4" /></button>
+                  <span className="text-xs font-bold text-slate-600">Page {rhpAppsPage}</span>
+                  <button disabled={rhpAppsPage * 20 >= rhpAppsTotal} onClick={() => { setRhpAppsPage(p => p + 1); }} className="p-2 rounded-lg border hover:bg-white disabled:opacity-30 transition-all"><ChevronRight className="w-4 h-4" /></button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* View Application Modal */}
+          {viewApp && (
+            <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-10 overflow-y-auto" onClick={() => setViewApp(null)}>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 mb-10" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-6 border-b">
+                  <div>
+                    <h2 className="text-xl font-extrabold text-slate-900">Application Details</h2>
+                    <p className="text-sm text-indigo-600 font-mono font-bold mt-0.5">{viewApp.application_code || `#${viewApp.id}`}</p>
+                  </div>
+                  <button onClick={() => setViewApp(null)} className="p-2 rounded-xl hover:bg-slate-50"><X className="w-5 h-5 text-slate-400" /></button>
+                </div>
+                <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                  {/* Basic Info */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Basic Information</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[['Full Name', viewApp.full_name || `${viewApp.first_name} ${viewApp.last_name}`],
+                        ['Gender', viewApp.gender], ['Age', viewApp.age], ['DOB', formatDate(viewApp.date_of_birth)],
+                        ['Mobile', viewApp.phone], ['Email', viewApp.email],
+                        ['Aadhaar', viewApp.aadhaar_number], ['PAN', viewApp.pan_number]
+                      ].map(([label, val]) => (
+                        <div key={label} className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
+                          <p className="text-sm font-semibold text-slate-800 mt-0.5">{val || '—'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Professional */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Professional Details</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[['Qualification', viewApp.qualification], ['Reg Number', viewApp.registration_number],
+                        ['Reg Authority', viewApp.registration_authority], ['Experience', `${viewApp.years_of_experience || 0} years`]
+                      ].map(([label, val]) => (
+                        <div key={label} className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
+                          <p className="text-sm font-semibold text-slate-800 mt-0.5">{val || '—'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Location */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Practice Location</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[['Clinic', viewApp.clinic_name], ['Village', viewApp.village], ['District', viewApp.district_name],
+                        ['Block', viewApp.block_name], ['State', viewApp.state], ['PIN', viewApp.pin_code],
+                        ['Address', viewApp.address]
+                      ].map(([label, val]) => (
+                        <div key={label} className={`bg-slate-50 rounded-xl p-3 ${label === 'Address' ? 'col-span-2 md:col-span-3' : ''}`}>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
+                          <p className="text-sm font-semibold text-slate-800 mt-0.5">{val || '—'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Infrastructure */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Infrastructure</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {[['Consultation', viewApp.has_consultation_space], ['Screening', viewApp.has_screening_space],
+                        ['Electricity', viewApp.has_electricity], ['Smartphone', viewApp.has_smartphone], ['Internet', viewApp.has_internet]
+                      ].map(([label, val]) => (
+                        <span key={label} className={`px-3 py-1.5 rounded-full text-xs font-bold border ${val ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
+                          {val ? '✓' : '✗'} {label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Experience & Interest */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Experience & Interest</h3>
+                    <div className="space-y-3">
+                      {[['Health Camp Experience', viewApp.health_camp_experience], ['Eye Care Experience', viewApp.eye_care_experience],
+                        ['Why Join', viewApp.why_join_reason]
+                      ].filter(([, v]) => v).map(([label, val]) => (
+                        <div key={label} className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
+                          <p className="text-sm text-slate-700 mt-1">{val}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Financial & Bank */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Financial & Bank</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[['Willing to Invest', viewApp.willing_to_invest ? 'Yes' : 'No'], ['Patients/Day', viewApp.patients_per_day],
+                        ['Account Holder', viewApp.bank_account_holder], ['Bank', viewApp.bank_name],
+                        ['Account No', viewApp.bank_account_number], ['IFSC', viewApp.bank_ifsc]
+                      ].map(([label, val]) => (
+                        <div key={label} className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
+                          <p className="text-sm font-semibold text-slate-800 mt-0.5">{val || '—'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Documents */}
+                  {viewApp.documents && viewApp.documents.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Uploaded Documents</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {viewApp.documents.map((doc, i) => (
+                          <a key={i} href={doc.file_url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center space-x-3 p-3 bg-slate-50 rounded-xl border hover:border-indigo-300 hover:bg-indigo-50/50 transition-all">
+                            <FileText className="w-5 h-5 text-indigo-500" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-slate-800 truncate">{doc.file_name}</p>
+                              <p className="text-[10px] text-slate-400 uppercase">{doc.document_type?.replace(/_/g, ' ')}</p>
+                            </div>
+                            <ExternalLink className="w-4 h-4 text-slate-400" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="p-6 border-t flex items-center justify-end space-x-3">
+                  {viewApp.status !== 'approved' && (
+                    <button onClick={() => { handleAppStatus(viewApp.id, 'approved'); setViewApp(null); }}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm shadow-md transition-all">Approve</button>
+                  )}
+                  {viewApp.status !== 'rejected' && viewApp.status !== 'approved' && (
+                    <button onClick={() => { handleAppStatus(viewApp.id, 'rejected'); setViewApp(null); }}
+                      className="px-5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm shadow-md transition-all">Reject</button>
+                  )}
+                  <button onClick={() => setViewApp(null)} className="px-5 py-2.5 rounded-xl border hover:bg-slate-50 font-bold text-sm text-slate-500 transition-all">Close</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
         </> /* end of stats/data view */
         )}
 

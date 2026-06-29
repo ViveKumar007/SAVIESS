@@ -1,11 +1,16 @@
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 
-// Configure Cloudinary
+// Configure Cloudinary — credentials MUST come from environment variables.
+// In development, set them in backend/.env. In production, use deployment secrets.
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+  console.warn('[CLOUDINARY] WARNING: Cloudinary credentials are not configured. File uploads will fail.');
+}
+
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'mock_cloud',
-  api_key: process.env.CLOUDINARY_API_KEY || 'mock_key',
-  api_secret: process.env.CLOUDINARY_API_SECRET || 'mock_secret'
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
 // Configure Multer memory storage
@@ -20,15 +25,8 @@ const upload = multer({
 // Helper function to stream upload to Cloudinary
 const uploadStream = (fileBuffer, folder = 'saviess_uploads') => {
   return new Promise((resolve, reject) => {
-    // Robust fallback for mock testing in case Cloudinary variables are missing
-    if (!process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME === 'mock_cloud') {
-      console.log('Using Mock Cloudinary Upload Stream');
-      return resolve({
-        secure_url: `https://res.cloudinary.com/mock_cloud/image/upload/v1234567890/saviess_mock_${Date.now()}.png`,
-        public_id: `mock_public_id_${Date.now()}`,
-        bytes: fileBuffer.length,
-        format: 'png'
-      });
+    if (!process.env.CLOUDINARY_CLOUD_NAME) {
+      return reject(new Error('Cloudinary credentials are not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in your .env file.'));
     }
 
     const stream = cloudinary.uploader.upload_stream(
@@ -47,9 +45,8 @@ const uploadStream = (fileBuffer, folder = 'saviess_uploads') => {
 
 // Helper function to delete assets from Cloudinary
 const deleteAsset = async (publicId) => {
-  if (!process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME === 'mock_cloud') {
-    console.log('Using Mock Cloudinary Deletion for ID:', publicId);
-    return { result: 'ok' };
+  if (!process.env.CLOUDINARY_CLOUD_NAME) {
+    throw new Error('Cloudinary credentials are not configured.');
   }
   try {
     return await cloudinary.uploader.destroy(publicId);
