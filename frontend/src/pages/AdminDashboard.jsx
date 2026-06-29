@@ -731,12 +731,15 @@ const AdminDashboard = () => {
                 {/* Role Toggle */}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Account Type</label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <button type="button" onClick={() => setCreateRole('field_officer')} className={`py-3.5 rounded-xl font-bold text-sm border-2 transition-all flex items-center justify-center space-x-2 ${createRole === 'field_officer' ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
                       <MapPin className="w-4 h-4" /><span>Field Officer</span>
                     </button>
-                    <button type="button" onClick={() => setCreateRole('rhp')} className={`py-3.5 rounded-xl font-bold text-sm border-2 transition-all flex items-center justify-center space-x-2 ${createRole === 'rhp' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
-                      <Stethoscope className="w-4 h-4" /><span>RHP (Vision Entrepreneur)</span>
+                    <button type="button" onClick={() => setCreateRole('field_manager')} className={`py-3.5 rounded-xl font-bold text-sm border-2 transition-all flex items-center justify-center space-x-2 ${createRole === 'field_manager' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
+                      <Users className="w-4 h-4" /><span>Field Manager</span>
+                    </button>
+                    <button type="button" onClick={() => setCreateRole('program_director')} className={`py-3.5 rounded-xl font-bold text-sm border-2 transition-all flex items-center justify-center space-x-2 ${createRole === 'program_director' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
+                      <Shield className="w-4 h-4" /><span>Program Director</span>
                     </button>
                   </div>
                 </div>
