@@ -15,6 +15,7 @@ const partnerController = require('../controllers/partnerController');
 const kpiController = require('../controllers/kpiController');
 const fieldReportController = require('../controllers/fieldReportController');
 const rhpRegistrationController = require('../controllers/rhpRegistrationController');
+const fieldManagerController = require('../controllers/fieldManagerController');
 
 // ----------------------------------------------------------------------------
 // 1. Auth Module
@@ -278,6 +279,42 @@ router.get(
 );
 
 // ----------------------------------------------------------------------------
+// 6b. Field Manager Admin Management (Super Admin only)
+// ----------------------------------------------------------------------------
+router.get(
+  '/dashboard/field-managers',
+  verifyToken,
+  checkRole(['super_admin']),
+  dashboardController.getFieldManagers
+);
+// Reassign route must come before :userId to avoid path conflict
+router.put(
+  '/dashboard/field-managers/reassign-fo',
+  verifyToken,
+  checkRole(['super_admin']),
+  dashboardController.reassignFieldOfficer
+);
+router.get(
+  '/dashboard/field-managers/:userId',
+  verifyToken,
+  checkRole(['super_admin']),
+  dashboardController.getFieldManagerDetail
+);
+router.get(
+  '/dashboard/field-managers/:userId/visits',
+  verifyToken,
+  checkRole(['super_admin']),
+  dashboardController.getFieldManagerVisitHistory
+);
+router.put(
+  '/dashboard/field-managers/:userId/status',
+  verifyToken,
+  checkRole(['super_admin']),
+  dashboardController.updateFieldManagerStatus
+);
+
+
+// ----------------------------------------------------------------------------
 // 7. Partner Management Module (Program Director)
 // ----------------------------------------------------------------------------
 router.get(
@@ -352,6 +389,15 @@ router.put(
 // ----------------------------------------------------------------------------
 // 10. Public Endpoints (No Authentication Required)
 // ----------------------------------------------------------------------------
+router.get('/public/states', async (req, res) => {
+  try {
+    const pool = require('../config/db');
+    const [states] = await pool.query('SELECT id, name, code FROM states ORDER BY name ASC');
+    res.json({ success: true, data: states });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+});
 router.get('/public/districts', async (req, res) => {
   try {
     const pool = require('../config/db');
@@ -441,6 +487,64 @@ router.put(
   verifyToken,
   checkRole(['super_admin', 'program_director', 'field_manager']),
   rhpRegistrationController.updateStatus
+);
+
+// ----------------------------------------------------------------------------
+// 12. Field Manager Module — Teams, Live Tracking, RHP Visits
+// ----------------------------------------------------------------------------
+router.get(
+  '/fm/field-officers',
+  verifyToken,
+  checkRole(['field_manager']),
+  fieldManagerController.getManagedFieldOfficers
+);
+router.post(
+  '/fm/teams',
+  verifyToken,
+  checkRole(['field_manager']),
+  fieldManagerController.createTeam
+);
+router.get(
+  '/fm/teams',
+  verifyToken,
+  checkRole(['field_manager']),
+  fieldManagerController.getTeams
+);
+router.put(
+  '/fm/teams/:id',
+  verifyToken,
+  checkRole(['field_manager']),
+  fieldManagerController.updateTeam
+);
+router.delete(
+  '/fm/teams/:id',
+  verifyToken,
+  checkRole(['field_manager']),
+  fieldManagerController.deleteTeam
+);
+router.post(
+  '/fm/teams/:id/members',
+  verifyToken,
+  checkRole(['field_manager']),
+  fieldManagerController.addTeamMembers
+);
+router.delete(
+  '/fm/teams/:id/members/:foId',
+  verifyToken,
+  checkRole(['field_manager']),
+  fieldManagerController.removeTeamMember
+);
+router.get(
+  '/fm/team-locations',
+  verifyToken,
+  checkRole(['field_manager']),
+  fieldManagerController.getTeamLocations
+);
+router.get(
+  '/fm/rhp-visits',
+  verifyToken,
+  checkRole(['field_manager']),
+  fieldManagerController.getRhpVisits
 );
 
 module.exports = router;

@@ -89,11 +89,13 @@ io.on('connection', (socket) => {
   // Event: Location update from Field Officer device
   socket.on('fo_location_update', async (data) => {
     if (user.role !== 'field_officer' || !user.profileId) {
+      console.warn(`Location update rejected: role=${user.role}, profileId=${user.profileId}, email=${user.email}`);
       return;
     }
 
     const { latitude, longitude, accuracy, batteryLevel } = data;
     if (latitude === undefined || longitude === undefined) {
+      console.warn(`Location update missing coords from FO ${user.email}`);
       return;
     }
 
@@ -101,6 +103,11 @@ io.on('connection', (socket) => {
       // Upsert into live locations & insert breadcrumb logs
       await processLocationTracking(user.profileId, latitude, longitude, accuracy, batteryLevel);
       
+      // Check how many admins are listening
+      const adminRoom = io.sockets.adapter.rooms.get('admin');
+      const adminCount = adminRoom ? adminRoom.size : 0;
+      console.log(`FO ${user.email} location update: (${latitude}, ${longitude}) → broadcasting to ${adminCount} admin(s)`);
+
       // Broadcast live location details to the admins monitoring dashboard
       io.to('admin').emit('admin_location_update', {
         foId: user.profileId,

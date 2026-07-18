@@ -4,7 +4,7 @@ Follow these steps to run the frontend and backend applications locally, using t
 
 ---
 
-### Step 1: Set Up the MySQL Database
+### Step 1: Set Up the MySQL Database (First Time Only)
 1. Open your terminal and start the MySQL monitor as the root user:
    ```bash
    mysql -u root
@@ -13,11 +13,15 @@ Follow these steps to run the frontend and backend applications locally, using t
    ```sql
    source database/schema.sql
    ```
-   *(This creates the `saviess_vep` database and defines all 23 relational tables. Once complete, exit by typing `exit;` or `quit;`)*.
+3. Run the states migration to add multi-state support (all 36 Indian states/UTs):
+   ```sql
+   source database/migration_add_states.sql
+   ```
+   *(This creates the `saviess_vep` database, defines all relational tables, and seeds all Indian states. Once complete, exit by typing `exit;` or `quit;`)*.
 
 ---
 
-### Step 2: Configure Environment Variables
+### Step 2: Configure Environment Variables (First Time Only)
 1. Verify that your `backend/.env` file has the correct database password. Since your local MySQL `root` user does not use a password, the database password setting must be blank:
    ```env
    DB_PASSWORD=
@@ -25,46 +29,36 @@ Follow these steps to run the frontend and backend applications locally, using t
 
 ---
 
-### Step 3: Populate Mock Data (Seeding)
+### Step 3: Install Dependencies (First Time Only)
+1. From the project root directory, install all dependencies for both backend and frontend at once:
+   ```bash
+   npm run install:all
+   ```
+
+---
+
+### Step 4: Populate Mock Data — Seeding (First Time Only)
 1. Run the database seed script from your project root directory to pre-fill districts, blocks, warehouse inventory, and mock users:
    ```bash
-   node backend/src/config/seed.js
+   npm run seed
    ```
 
 ---
 
-### Step 4: Start the Backend API Server
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
-2. Install the backend dependencies (if you haven't already):
-   ```bash
-   npm install
-   
-   ```
-3. Run the backend development server:
-   ```bash
-   npm run dev
-   ```
-   *The API server will launch at `http://localhost:5000`.*
+### Step 5: Start the Application 🚀
+From the project root directory, run a **single command** to start both the backend and frontend simultaneously:
+```bash
+npm run dev
+```
+This will:
+- Launch the **Backend API** at `http://localhost:5000`
+- Launch the **Frontend React App** at `http://localhost:5173`
 
----
+Both logs will appear in the same terminal, color-coded:
+- 🔵 **BACKEND** — blue
+- 🟢 **FRONTEND** — green
 
-### Step 5: Start the Frontend React App
-1. Open a new terminal window/tab and navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
-2. Install the frontend dependencies (if you haven't already):
-   ```bash
-   npm install
-   ```
-3. Start the Vite React development server:
-   ```bash
-   npm run dev
-   ```
-   *The client dashboard will launch at `http://localhost:5173`.*
+Press `Ctrl+C` to stop both servers at once.
 
 ---
 
@@ -81,3 +75,19 @@ Log in using any of the following credentials (password is **`Saviess@2026`** fo
 | **Field Manager** | `manager@saviess.org` |
 | **Field Officer** | `fo@saviess.org` |
 | **Rural Health Provider (RHP)** | `rhp@saviess.org` |
+
+---
+
+## Quick Reference (After First-Time Setup)
+
+Once you've completed the first-time setup (Steps 1–4), you only need **one command** to start everything:
+
+```bash
+npm run dev
+```
+
+| Script | Description |
+|---|---|
+| `npm run dev` | Start both backend + frontend together |
+| `npm run install:all` | Install dependencies for both apps |
+| `npm run seed` | Populate the database with mock data |

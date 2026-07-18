@@ -634,6 +634,302 @@ const getFmSummary = async (req, res) => {
   }
 };
 
+// ============================================================================
+// FIELD MANAGER ADMIN MANAGEMENT — Admin overview of all Field Managers
+// ============================================================================
+
+// GET /dashboard/field-managers — List all FMs with aggregated stats
+const getFieldManagers = async (req, res) => {
+  try {
+    const [managers] = await db.query(`
+      SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.is_active,
+             u.last_login, u.created_at,
+             (SELECT COUNT(*) FROM field_officers fo WHERE fo.manager_id = u.id) as fo_count,
+             (SELECT COUNT(*) FROM field_officers fo2 WHERE fo2.manager_id = u.id AND fo2.status = 'active') as active_fo_count,
+             (SELECT COUNT(*) FROM fm_teams t WHERE t.manager_user_id = u.id) as team_count,
+             (SELECT COUNT(*) FROM fo_visits v
+              JOIN field_officers fo3 ON v.fo_id = fo3.id
+              WHERE fo3.manager_id = u.id) as total_visits,
+             (SELECT COUNT(*) FROM fo_visits v2
+              JOIN field_officers fo4 ON v2.fo_id = fo4.id
+              WHERE fo4.manager_id = u.id AND v2.status = 'completed') as completed_visits,
+             (SELECT COUNT(DISTINCT v3.target_rhp_id) FROM fo_visits v3
+              JOIN field_officers fo5 ON v3.fo_id = fo5.id
+              WHERE fo5.manager_id = u.id AND v3.target_rhp_id IS NOT NULL) as rhp_coverage,
+             (SELECT MAX(v4.visit_date) FROM fo_visits v4
+              JOIN field_officers fo6 ON v4.fo_id = fo6.id
+              WHERE fo6.manager_id = u.id) as last_visit_date
+      FROM users u
+      WHERE u.role = 'field_manager'
+      ORDER BY u.first_name ASC
+    `);
+
+    res.json({ success: true, data: managers });
+  } catch (error) {
+    console.error('[ADMIN] getFieldManagers error:', error);
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+};
+
+// GET /dashboard/field-managers/:userId — Full profile for a single FM
+const getFieldManagerDetail = async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    // 1. FM user profile
+    const [users] = await db.query(
+      'SELECT id, email, first_name, last_name, phone, is_active, last_login, created_at FROM users WHERE id = ? AND role = ?',
+      [userId, 'field_manager']
+    );
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, error: 'Field Manager not found' });
+    }
+    const fm = users[0];
+
+    // 2. All FOs managed by this FM
+    const [fieldOfficers] = await db.query(`
+      SELECT fo.id as fo_id, fo.user_id, fo.status, fo.coverage_area,
+             u.first_name, u.last_name, u.phone, u.email, u.is_active as user_active,
+             d.name as district_name, b.name as block_name
+      FROM field_officers fo
+      JOIN users u ON fo.user_id = u.id
+      JOIN districts d ON fo.district_id = d.id
+      JOIN blocks b ON fo.block_id = b.id
+      WHERE fo.manager_id = ?
+      ORDER BY u.first_name ASC
+    `, [userId]);
+
+    // 3. Teams with members
+    const [teams] = await db.query(`
+      SELECT t.id, t.name, t.description, t.status, t.created_at,
+             COUNT(tm.id) as member_count
+      FROM fm_teams t
+      LEFT JOIN fm_team_members tm ON tm.team_id = t.id
+      WHERE t.manager_user_id = ?
+      GROUP BY t.id
+      ORDER BY t.created_at DESC
+    `, [userId]);
+
+    for (const team of teams) {
+      const [members] = await db.query(`
+        SELECT tm.fo_id, u.first_name, u.last_name, u.phone, fo.status as fo_status
+        FROM fm_team_members tm
+        JOIN field_officers fo ON tm.fo_id = fo.id
+        JOIN users u ON fo.user_id = u.id
+        WHERE tm.team_id = ?
+        ORDER BY u.first_name ASC
+      `, [team.id]);
+      team.members = members;
+    }
+
+    // 4. RHPs visited by this FM's FOs
+    const [rhps] = await db.query(`
+      SELECT DISTINCT r.id, r.center_name, r.village, r.status,
+             ru.first_name as rhp_first, ru.last_name as rhp_last,
+             d.name as district_name, b.name as block_name
+      FROM fo_visits v
+      JOIN field_officers fo ON v.fo_id = fo.id
+      JOIN rhps r ON v.target_rhp_id = r.id
+      JOIN users ru ON r.user_id = ru.id
+      JOIN districts d ON r.district_id = d.id
+      JOIN blocks b ON r.block_id = b.id
+      WHERE fo.manager_id = ? AND v.target_rhp_id IS NOT NULL
+      ORDER BY r.center_name ASC
+    `, [userId]);
+
+    // 5. Performance metrics
+    const [visitStats] = await db.query(`
+      SELECT
+        COUNT(*) as total_visits,
+        SUM(CASE WHEN v.status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN v.status = 'planned' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN v.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
+        SUM(CASE WHEN v.visit_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN 1 ELSE 0 END) as this_month,
+        SUM(CASE WHEN v.visit_date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+                  AND v.visit_date < DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN 1 ELSE 0 END) as last_month
+      FROM fo_visits v
+      JOIN field_officers fo ON v.fo_id = fo.id
+      WHERE fo.manager_id = ?
+    `, [userId]);
+
+    // 6. Field report stats (graceful if table doesn't exist)
+    let reportStats;
+    try {
+      const [rs] = await db.query(`
+        SELECT
+          COUNT(*) as total_reports,
+          SUM(CASE WHEN fr.status = 'approved' THEN 1 ELSE 0 END) as approved,
+          SUM(CASE WHEN fr.status = 'pending' THEN 1 ELSE 0 END) as pending,
+          SUM(CASE WHEN fr.status = 'rejected' THEN 1 ELSE 0 END) as rejected
+        FROM field_reports fr
+        JOIN field_officers fo ON fr.fo_id = fo.id
+        WHERE fo.manager_id = ?
+      `, [userId]);
+      reportStats = rs;
+    } catch (e) {
+      reportStats = [{ total_reports: 0, approved: 0, pending: 0, rejected: 0 }];
+    }
+
+    // 7. Live locations of FOs
+    const [liveLocations] = await db.query(`
+      SELECT l.fo_id, l.latitude, l.longitude, l.accuracy, l.battery_level, l.last_updated,
+             u.first_name, u.last_name
+      FROM fo_live_location l
+      JOIN field_officers fo ON l.fo_id = fo.id
+      JOIN users u ON fo.user_id = u.id
+      WHERE fo.manager_id = ?
+        AND l.last_updated >= NOW() - INTERVAL ? MINUTE
+      ORDER BY l.last_updated DESC
+    `, [userId, FO_LOCATION_STALENESS_MINUTES]);
+
+    // 8. Recent activity (last 10 visits)
+    const [recentActivity] = await db.query(`
+      SELECT v.id, v.visit_date, v.purpose, v.status, v.notes,
+             fu.first_name as fo_first, fu.last_name as fo_last,
+             r.center_name as rhp_center, v.created_at
+      FROM fo_visits v
+      JOIN field_officers fo ON v.fo_id = fo.id
+      JOIN users fu ON fo.user_id = fu.id
+      LEFT JOIN rhps r ON v.target_rhp_id = r.id
+      WHERE fo.manager_id = ?
+      ORDER BY v.visit_date DESC, v.created_at DESC
+      LIMIT 10
+    `, [userId]);
+
+    res.json({
+      success: true,
+      data: {
+        profile: fm,
+        fieldOfficers,
+        teams,
+        rhps,
+        metrics: {
+          visits: visitStats[0] || {},
+          reports: reportStats[0] || {}
+        },
+        liveLocations,
+        recentActivity
+      }
+    });
+  } catch (error) {
+    console.error('[ADMIN] getFieldManagerDetail error:', error);
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+};
+
+// GET /dashboard/field-managers/:userId/visits — Paginated visit history
+const getFieldManagerVisitHistory = async (req, res) => {
+  const { userId } = req.params;
+  const { page = 1, limit = 20, startDate, endDate, status, search } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  try {
+    let whereClause = 'WHERE fo.manager_id = ?';
+    const params = [userId];
+
+    if (startDate) { whereClause += ' AND v.visit_date >= ?'; params.push(startDate); }
+    if (endDate) { whereClause += ' AND v.visit_date <= ?'; params.push(endDate); }
+    if (status) { whereClause += ' AND v.status = ?'; params.push(status); }
+    if (search) {
+      whereClause += ' AND (fu.first_name LIKE ? OR fu.last_name LIKE ? OR r.center_name LIKE ?)';
+      const term = `%${search}%`;
+      params.push(term, term, term);
+    }
+
+    const [countResult] = await db.query(`
+      SELECT COUNT(*) as total FROM fo_visits v
+      JOIN field_officers fo ON v.fo_id = fo.id
+      JOIN users fu ON fo.user_id = fu.id
+      LEFT JOIN rhps r ON v.target_rhp_id = r.id
+      ${whereClause}
+    `, params);
+
+    const dataParams = [...params, parseInt(limit), offset];
+    const [visits] = await db.query(`
+      SELECT v.id, v.visit_date, v.purpose, v.latitude, v.longitude,
+             v.notes, v.status, v.check_in_time, v.check_out_time,
+             fu.first_name as fo_first, fu.last_name as fo_last, fu.phone as fo_phone,
+             r.center_name as rhp_center, r.village as rhp_village,
+             ru.first_name as rhp_first, ru.last_name as rhp_last,
+             p.file_url as proof_image_url, p.file_name as proof_file_name,
+             v.created_at
+      FROM fo_visits v
+      JOIN field_officers fo ON v.fo_id = fo.id
+      JOIN users fu ON fo.user_id = fu.id
+      LEFT JOIN rhps r ON v.target_rhp_id = r.id
+      LEFT JOIN users ru ON r.user_id = ru.id
+      LEFT JOIN proof_uploads p ON v.proof_image_id = p.id
+      ${whereClause}
+      ORDER BY v.visit_date DESC, v.created_at DESC
+      LIMIT ? OFFSET ?
+    `, dataParams);
+
+    res.json({
+      success: true,
+      total: countResult[0].total,
+      page: parseInt(page),
+      data: visits
+    });
+  } catch (error) {
+    console.error('[ADMIN] getFieldManagerVisitHistory error:', error);
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+};
+
+// PUT /dashboard/field-managers/:userId/status — Activate/deactivate
+const updateFieldManagerStatus = async (req, res) => {
+  const { userId } = req.params;
+  const { isActive } = req.body;
+
+  if (isActive === undefined) {
+    return res.status(400).json({ success: false, error: 'isActive field is required' });
+  }
+
+  try {
+    const [user] = await db.query('SELECT id, role FROM users WHERE id = ? AND role = ?', [userId, 'field_manager']);
+    if (user.length === 0) {
+      return res.status(404).json({ success: false, error: 'Field Manager not found' });
+    }
+
+    await db.query('UPDATE users SET is_active = ? WHERE id = ?', [isActive ? 1 : 0, userId]);
+
+    res.json({ success: true, message: `Field Manager ${isActive ? 'activated' : 'deactivated'} successfully` });
+  } catch (error) {
+    console.error('[ADMIN] updateFieldManagerStatus error:', error);
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+};
+
+// PUT /dashboard/field-managers/reassign-fo — Reassign FO to different manager
+const reassignFieldOfficer = async (req, res) => {
+  const { foId, newManagerUserId } = req.body;
+
+  if (!foId || !newManagerUserId) {
+    return res.status(400).json({ success: false, error: 'foId and newManagerUserId are required' });
+  }
+
+  try {
+    // Verify new manager exists and is a field_manager
+    const [mgr] = await db.query('SELECT id FROM users WHERE id = ? AND role = ?', [newManagerUserId, 'field_manager']);
+    if (mgr.length === 0) {
+      return res.status(404).json({ success: false, error: 'Target Field Manager not found' });
+    }
+
+    // Verify FO exists
+    const [fo] = await db.query('SELECT id, manager_id FROM field_officers WHERE id = ?', [foId]);
+    if (fo.length === 0) {
+      return res.status(404).json({ success: false, error: 'Field Officer not found' });
+    }
+
+    await db.query('UPDATE field_officers SET manager_id = ? WHERE id = ?', [newManagerUserId, foId]);
+
+    res.json({ success: true, message: 'Field Officer reassigned successfully' });
+  } catch (error) {
+    console.error('[ADMIN] reassignFieldOfficer error:', error);
+    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+  }
+};
+
 module.exports = {
   getDashboardSummary,
   getFoDailySummary,
@@ -642,5 +938,10 @@ module.exports = {
   getAllDispensings,
   getAllVisits,
   getPdSummary,
-  getFmSummary
+  getFmSummary,
+  getFieldManagers,
+  getFieldManagerDetail,
+  getFieldManagerVisitHistory,
+  updateFieldManagerStatus,
+  reassignFieldOfficer
 };

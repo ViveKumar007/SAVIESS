@@ -297,7 +297,7 @@ const getDispensingPdf = async (req, res) => {
       "BT",
       "/F2 20 Tf",
       "50 780 Td",
-      "(SAVIESS NGO EYE CARE PROGRAM - BIHAR) Tj",
+      "(SAVIESS NGO EYE CARE PROGRAM) Tj",
       "0 -30 Td",
       "/F1 12 Tf",
       "(Joint Initiative: Preheal, SAVIESS, & VisionSpring) Tj",

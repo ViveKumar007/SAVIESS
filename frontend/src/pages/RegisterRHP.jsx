@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   ArrowLeft, ArrowRight, User, Briefcase, MapPin, Building2,
   Heart, Target, DollarSign, Landmark, Upload, CheckCircle,
-  AlertTriangle, FileText, X, Camera, Save, RotateCcw, Send, Loader2
+  AlertTriangle, FileText, X, Camera, RotateCcw, Send, Loader2
 } from 'lucide-react';
 import { API } from '../api';
 
@@ -30,7 +30,19 @@ const STEPS = [
   { key: 'uploads', label: 'Uploads', icon: Upload },
 ];
 
-const DRAFT_KEY = 'saviess_rhp_draft';
+
+
+// ── Hardcoded Indian States/UTs (fallback when API is unavailable) ──
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
+  'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
+  'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
+  'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+  'Andaman and Nicobar Islands', 'Chandigarh',
+  'Dadra and Nagar Haveli and Daman and Diu', 'Delhi',
+  'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
+];
 
 // ── Context to share form state with sub-components ──
 const RHPFormContext = createContext(null);
@@ -75,8 +87,8 @@ const SelectInput = ({ field, label, required, options, placeholder = 'Select...
         }`}
         {...props}
       >
-        <option value="">{placeholder}</option>
-        {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+        <option value="" className="bg-slate-800 text-slate-400">{placeholder}</option>
+        {options.map(opt => <option key={opt.value} value={opt.value} className="bg-slate-800 text-white">{opt.label}</option>)}
       </select>
       {errors[field] && <p className="mt-1 text-xs text-rose-400">{errors[field]}</p>}
     </div>
@@ -182,16 +194,17 @@ const RegisterRHP = () => {
   const [globalError, setGlobalError] = useState('');
   const [errors, setErrors] = useState({});
 
-  // Districts & Blocks (from public API)
-  const [districts, setDistricts] = useState([]);
-  const [blocks, setBlocks] = useState([]);
+  // States (from public API)
+  const [states, setStates] = useState([]);
+  const [pinLookupLoading, setPinLookupLoading] = useState(false);
+  const [pinLookupMsg, setPinLookupMsg] = useState('');
 
   // ── Form Data ──
   const [form, setForm] = useState({
     fullName: '', gender: 'male', age: '', dateOfBirth: '', phone: '', email: '',
     aadhaarNumber: '', panNumber: '',
     qualification: '', registrationNumber: '', registrationAuthority: '', yearsOfExperience: '',
-    districtId: '', blockId: '', village: '', clinicName: '', address: '', state: 'Bihar', pinCode: '',
+    district: '', block: '', village: '', clinicName: '', address: '', state: '', pinCode: '',
     hasConsultationSpace: false, hasScreeningSpace: false, hasElectricity: false,
     hasSmartphone: false, hasInternet: false, storageSpace: '', medicineShop: '',
     healthCampExperience: '', eyeCareExperience: '',
@@ -207,47 +220,27 @@ const RegisterRHP = () => {
   });
   const [filePreviews, setFilePreviews] = useState({});
 
-  // ── Load draft from localStorage ──
+
+
+  // ── Fetch states (with hardcoded fallback) ──
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(DRAFT_KEY);
-      if (saved) {
-        const draft = JSON.parse(saved);
-        setForm(prev => ({ ...prev, ...draft }));
+    const load = async () => {
+      try {
+        const res = await axios.get(`${API}/public/states`);
+        if (res.data.success && res.data.data?.length > 0) {
+          setStates(res.data.data);
+        } else {
+          // API returned empty — use hardcoded fallback
+          setStates(INDIAN_STATES.map(name => ({ name })));
+        }
+      } catch (e) {
+        console.error('Load states error:', e);
+        // API failed — use hardcoded fallback so form still works
+        setStates(INDIAN_STATES.map(name => ({ name })));
       }
-    } catch (e) { /* ignore */ }
-  }, []);
-
-  // ── Auto-save draft every 30s ──
-  useEffect(() => {
-    const timer = setInterval(() => {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(form));
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [form]);
-
-  // ── Fetch districts ──
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await axios.get(`${API}/public/districts`);
-        if (res.data.success) setDistricts(res.data.data);
-      } catch (e) { console.error('Load districts error:', e); }
     };
     load();
   }, []);
-
-  // ── Fetch blocks when district changes ──
-  useEffect(() => {
-    if (!form.districtId) { setBlocks([]); return; }
-    const load = async () => {
-      try {
-        const res = await axios.get(`${API}/public/blocks?districtId=${form.districtId}`);
-        if (res.data.success) setBlocks(res.data.data);
-      } catch (e) { console.error('Load blocks error:', e); }
-    };
-    load();
-  }, [form.districtId]);
 
   // ── Field updater ──
   const set = useCallback((field, value) => {
@@ -314,22 +307,20 @@ const RegisterRHP = () => {
   }, []);
 
   // ── Submit ──
-  const handleSubmit = async (isDraft = false) => {
-    if (!isDraft) {
-      // Validate all steps
-      for (let s = 0; s < STEPS.length; s++) {
-        setStep(s);
-        // Validate minimal fields
-      }
-      if (!form.fullName.trim() || !form.phone.trim()) {
-        setStep(0);
-        setGlobalError('Please fill in all required fields (Full Name, Mobile Number).');
-        return;
-      }
-      if (!form.declarationAgreed) {
-        setGlobalError('You must agree to the declaration before submitting.');
-        return;
-      }
+  const handleSubmit = async () => {
+    // Validate all steps
+    for (let s = 0; s < STEPS.length; s++) {
+      setStep(s);
+      // Validate minimal fields
+    }
+    if (!form.fullName.trim() || !form.phone.trim()) {
+      setStep(0);
+      setGlobalError('Please fill in all required fields (Full Name, Mobile Number).');
+      return;
+    }
+    if (!form.declarationAgreed) {
+      setGlobalError('You must agree to the declaration before submitting.');
+      return;
     }
 
     setSubmitting(true);
@@ -344,7 +335,7 @@ const RegisterRHP = () => {
           formData.append(key, val);
         }
       }
-      formData.append('isDraft', isDraft ? 'true' : 'false');
+      formData.append('isDraft', 'false');
 
       // Append files
       if (files.photograph) formData.append('photograph', files.photograph);
@@ -360,16 +351,10 @@ const RegisterRHP = () => {
       });
 
       if (res.data.success) {
-        localStorage.removeItem(DRAFT_KEY);
-        if (isDraft) {
-          setGlobalError('');
-          alert('Draft saved successfully!');
-        } else {
-          setSubmitSuccess({
-            applicationCode: res.data.data.applicationCode,
-            fullName: res.data.data.fullName,
-          });
-        }
+        setSubmitSuccess({
+          applicationCode: res.data.data.applicationCode,
+          fullName: res.data.data.fullName,
+        });
       }
     } catch (err) {
       setGlobalError(err.response?.data?.error || 'Submission failed. Please try again.');
@@ -384,7 +369,7 @@ const RegisterRHP = () => {
       fullName: '', gender: 'male', age: '', dateOfBirth: '', phone: '', email: '',
       aadhaarNumber: '', panNumber: '',
       qualification: '', registrationNumber: '', registrationAuthority: '', yearsOfExperience: '',
-      districtId: '', blockId: '', village: '', clinicName: '', address: '', state: 'Bihar', pinCode: '',
+      district: '', block: '', village: '', clinicName: '', address: '', state: '', pinCode: '',
       hasConsultationSpace: false, hasScreeningSpace: false, hasElectricity: false,
       hasSmartphone: false, hasInternet: false, storageSpace: '', medicineShop: '',
       healthCampExperience: '', eyeCareExperience: '',
@@ -397,7 +382,7 @@ const RegisterRHP = () => {
     setFilePreviews({});
     setErrors({});
     setStep(0);
-    localStorage.removeItem(DRAFT_KEY);
+
   };
 
   // ── Context value (provides form state to module-scope sub-components) ──
@@ -464,7 +449,7 @@ const RegisterRHP = () => {
               <TextInput field="qualification" label="Qualification" placeholder="e.g. ASHA Training, ANM Diploma, B.Sc Nursing" />
             </div>
             <TextInput field="registrationNumber" label="Registration Number" placeholder="Professional registration number" />
-            <TextInput field="registrationAuthority" label="Registration Authority" placeholder="e.g. Bihar State Medical Council" />
+            <TextInput field="registrationAuthority" label="Registration Authority" placeholder="e.g. State Medical Council" />
             <TextInput field="yearsOfExperience" label="Years of Experience" type="number" placeholder="0" min="0" />
           </div>
         );
@@ -478,13 +463,106 @@ const RegisterRHP = () => {
             <div className="md:col-span-2">
               <TextArea field="address" label="Address" placeholder="Complete address of the practice location" />
             </div>
-            <SelectInput field="districtId" label="District" options={districts.map(d => ({ value: d.id, label: d.name }))}
-              placeholder="Select District" />
-            <TextInput field="state" label="State" placeholder="Bihar" />
-            <SelectInput field="blockId" label="Block" options={blocks.map(b => ({ value: b.id, label: b.name }))}
-              placeholder={form.districtId ? 'Select Block' : 'Select district first'} disabled={!form.districtId} />
-            <TextInput field="pinCode" label="PIN Code" placeholder="6-digit PIN" maxLength={6} />
-            <TextInput field="village" label="Village" placeholder="Village name" />
+            {/* PIN Code with auto-detect */}
+            <div>
+              <FieldLabel label="PIN Code" />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={form.pinCode}
+                  onChange={async (e) => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    set('pinCode', val);
+                    // Auto-lookup when 6 digits are entered
+                    if (val.length === 6) {
+                      setPinLookupLoading(true);
+                      setPinLookupMsg('');
+                      try {
+                        const resp = await axios.get(`https://api.postalpincode.in/pincode/${val}`);
+                        if (resp.data?.[0]?.Status === 'Success' && resp.data[0].PostOffice?.length > 0) {
+                          const po = resp.data[0].PostOffice[0];
+
+                          // --- Fuzzy match API state name to our dropdown options ---
+                          const STATE_ALIASES = {
+                            'orissa': 'Odisha',
+                            'chattisgarh': 'Chhattisgarh',
+                            'pondicherry': 'Puducherry',
+                            'uttaranchal': 'Uttarakhand',
+                            'andaman and nicobar': 'Andaman and Nicobar Islands',
+                            'andaman & nicobar islands': 'Andaman and Nicobar Islands',
+                            'dadra and nagar haveli': 'Dadra and Nagar Haveli and Daman and Diu',
+                            'dadra & nagar haveli': 'Dadra and Nagar Haveli and Daman and Diu',
+                            'daman and diu': 'Dadra and Nagar Haveli and Daman and Diu',
+                            'daman & diu': 'Dadra and Nagar Haveli and Daman and Diu',
+                            'delhi': 'Delhi',
+                            'nct of delhi': 'Delhi',
+                            'jammu and kashmir': 'Jammu and Kashmir',
+                            'jammu & kashmir': 'Jammu and Kashmir',
+                          };
+
+                          const matchStateName = (apiState) => {
+                            if (!apiState) return '';
+                            // Use INDIAN_STATES constant directly (always available)
+                            const stateNames = INDIAN_STATES;
+                            // 1. Exact match
+                            if (stateNames.includes(apiState)) return apiState;
+                            // 2. Case-insensitive match
+                            const lower = apiState.toLowerCase().trim();
+                            const ciMatch = stateNames.find(n => n.toLowerCase() === lower);
+                            if (ciMatch) return ciMatch;
+                            // 3. Alias lookup
+                            const aliasResult = STATE_ALIASES[lower];
+                            if (aliasResult) {
+                              const aliasMatch = stateNames.find(n => n.toLowerCase() === aliasResult.toLowerCase());
+                              if (aliasMatch) return aliasMatch;
+                            }
+                            // 4. Partial / substring match (e.g. "Andaman" matches "Andaman and Nicobar Islands")
+                            const partialMatch = stateNames.find(n =>
+                              n.toLowerCase().startsWith(lower) || lower.startsWith(n.toLowerCase())
+                            );
+                            if (partialMatch) return partialMatch;
+                            // 5. Fallback — return raw API value (user can fix manually)
+                            return apiState;
+                          };
+
+                          const matchedState = matchStateName(po.State);
+                          set('state', matchedState);
+                          set('district', po.District || '');
+                          set('village', po.Block || po.Name || '');
+                          setPinLookupMsg(`✓ Detected: ${po.District}, ${matchedState}`);
+                        } else {
+                          setPinLookupMsg('PIN code not found. Please fill manually.');
+                        }
+                      } catch {
+                        setPinLookupMsg('Lookup failed. Please fill manually.');
+                      } finally {
+                        setPinLookupLoading(false);
+                      }
+                    } else {
+                      setPinLookupMsg('');
+                    }
+                  }}
+                  placeholder="Enter 6-digit PIN to auto-detect location"
+                  maxLength={6}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-800/60 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 text-sm transition-all pr-10"
+                />
+                {pinLookupLoading && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 className="w-4 h-4 text-teal-400 animate-spin" />
+                  </div>
+                )}
+              </div>
+              {pinLookupMsg && (
+                <p className={`mt-1 text-xs ${pinLookupMsg.startsWith('✓') ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {pinLookupMsg}
+                </p>
+              )}
+            </div>
+            <SelectInput field="state" label="State" required options={states.map(s => ({ value: s.name, label: s.name }))}
+              placeholder="Select State" />
+            <TextInput field="district" label="District" placeholder="Enter your district name" />
+            <TextInput field="block" label="Block" placeholder="Enter your block name" />
+            <TextInput field="village" label="Village / Town" placeholder="Village or town name" />
           </div>
         );
 
@@ -694,13 +772,7 @@ const RegisterRHP = () => {
               <RotateCcw className="w-4 h-4" /><span>Reset</span>
             </button>
 
-            <button
-              onClick={() => handleSubmit(true)}
-              disabled={submitting}
-              className="flex items-center space-x-2 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 font-semibold text-sm transition-all disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" /><span>Save Draft</span>
-            </button>
+
 
             {step < STEPS.length - 1 ? (
               <button onClick={goNext} className="flex items-center space-x-2 px-5 py-3 rounded-xl bg-teal-500 hover:bg-teal-600 text-slate-900 font-bold text-sm shadow-lg shadow-teal-500/20 transition-all">
@@ -708,7 +780,7 @@ const RegisterRHP = () => {
               </button>
             ) : (
               <button
-                onClick={() => handleSubmit(false)}
+                onClick={() => handleSubmit()}
                 disabled={submitting}
                 className="flex items-center space-x-2 px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-50"
               >

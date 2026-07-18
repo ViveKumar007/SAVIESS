@@ -1,0 +1,14 @@
+{
+  "name": "saviess-vep",
+  "version": "1.0.0",
+  "description": "SAVIESS Vision Entrepreneur Platform - Monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n BACKEND,FRONTEND -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "seed": "node backend/src/config/seed.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

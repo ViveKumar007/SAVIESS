@@ -245,7 +245,7 @@ const ProgramDirectorDashboard = () => {
           </div>
           <div className="flex items-center space-x-3 bg-white p-2 rounded-xl border shadow-sm">
             <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></div>
-            <span className="text-xs font-semibold text-slate-600">Bihar State Overview</span>
+            <span className="text-xs font-semibold text-slate-600">State Overview</span>
           </div>
         </div>
 
@@ -477,7 +477,7 @@ const ProgramDirectorDashboard = () => {
                 <form onSubmit={handlePartnerSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Organization Name *</label>
-                    <input required value={partnerForm.name} onChange={e => setPartnerForm(p => ({ ...p, name: e.target.value }))} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-indigo-500 text-sm" placeholder="VisionSpring Bihar" />
+                    <input required value={partnerForm.name} onChange={e => setPartnerForm(p => ({ ...p, name: e.target.value }))} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-indigo-500 text-sm" placeholder="VisionSpring" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Type</label>

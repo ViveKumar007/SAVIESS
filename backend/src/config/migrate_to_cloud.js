@@ -18,18 +18,54 @@ async function loadSchema() {
 
   let sql = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'schema.sql'), 'utf8');
   let sql2 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_v2.sql'), 'utf8');
+  let sql3 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_add_states.sql'), 'utf8');
+  let sql4 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_fm_teams.sql'), 'utf8');
+  let sql5 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_rhp_registration.sql'), 'utf8');
 
-  // Remove CREATE DATABASE and USE statements (TiDB Serverless uses 'test' database)
-  sql = sql.replace(/CREATE DATABASE IF NOT EXISTS.*?;/s, '');
-  sql = sql.replace(/USE saviess_vep;/g, '');
-  sql2 = sql2.replace(/USE saviess_vep;/g, '');
+  // Clean all SQL files
+  const cleanSql = (content) => {
+    return content
+      .replace(/CREATE DATABASE IF NOT EXISTS.*?;/s, '')
+      .replace(/USE saviess_vep;/g, '')
+      .replace(/USE test;/g, '')
+      .replace(/DELIMITER \$\$[\s\S]*?DELIMITER ;/g, '');
+  };
 
-  // Remove DELIMITER blocks (triggers) — not supported in multi-statement mode
-  sql = sql.replace(/DELIMITER \$\$[\s\S]*?DELIMITER ;/g, '');
+  sql = cleanSql(sql);
+  sql2 = cleanSql(sql2);
+  sql3 = cleanSql(sql3);
+  sql4 = cleanSql(sql4);
+  sql5 = cleanSql(sql5);
 
-  await conn.query(sql);
-  await conn.query(sql2);
-  console.log('✅ Schema loaded successfully!');
+  const executeSql = async (conn, sqlContent, name) => {
+    console.log(`Applying ${name}...`);
+    // Split by semicolon, but handle comment lines and empty space
+    const statements = sqlContent
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0 && !s.startsWith('--'));
+
+    for (const stmt of statements) {
+      try {
+        await conn.query(stmt);
+      } catch (err) {
+        // Ignore duplicate column (1060), duplicate key (1061), table already exists (1050), duplicate entry (1062), column doesn't exist to drop (1091), duplicate key in table (1022), duplicate foreign key constraint name (1826)
+        if ([1022, 1050, 1060, 1061, 1062, 1091, 1826].includes(err.errno)) {
+          console.log(`  [Note - Ignored]: ${err.message}`);
+        } else {
+          console.error(`  [Error in statement]: ${stmt}`);
+          throw err;
+        }
+      }
+    }
+  };
+
+  await executeSql(conn, sql, 'schema.sql');
+  await executeSql(conn, sql2, 'migration_v2.sql');
+  await executeSql(conn, sql3, 'migration_add_states.sql');
+  await executeSql(conn, sql4, 'migration_fm_teams.sql');
+  await executeSql(conn, sql5, 'migration_rhp_registration.sql');
+  console.log('✅ Schema and all migrations processed successfully!');
 
   // Now create triggers separately (TiDB supports triggers)
   const trigger1 = `
@@ -47,11 +83,17 @@ async function loadSchema() {
   `;
 
   try {
-    await conn.query(trigger1);
-    await conn.query(trigger2);
-    console.log('✅ Triggers created successfully!');
+    await conn.query(trigger1.trim());
+    console.log('✅ Trigger 1 created successfully!');
   } catch (e) {
-    console.log('⚠️ Triggers may already exist:', e.message);
+    console.log('⚠️ Trigger 1 check:', e.message);
+  }
+
+  try {
+    await conn.query(trigger2.trim());
+    console.log('✅ Trigger 2 created successfully!');
+  } catch (e) {
+    console.log('⚠️ Trigger 2 check:', e.message);
   }
 
   // Verify tables

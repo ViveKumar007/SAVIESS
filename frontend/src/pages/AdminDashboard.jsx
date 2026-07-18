@@ -4,7 +4,7 @@ import axios from 'axios';
 import io from 'socket.io-client';
 import L from 'leaflet';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Users, UserCheck, Eye, Sparkles, Box, Hammer, LogOut, AlertTriangle, MapPin, Activity, Search, Calendar, ClipboardList, Stethoscope, Glasses, FileText, ExternalLink, ChevronLeft, ChevronRight, UserPlus, X, CheckCircle, Copy, Shield, FileSpreadsheet, Download } from 'lucide-react';
+import { Users, UserCheck, Eye, Sparkles, Box, Hammer, LogOut, AlertTriangle, MapPin, Activity, Search, Calendar, ClipboardList, Stethoscope, Glasses, FileText, ExternalLink, ChevronLeft, ChevronRight, UserPlus, X, CheckCircle, Copy, Shield, FileSpreadsheet, Download, Briefcase, Clock, TrendingUp, UserMinus, RefreshCw, ChevronDown, ChevronUp, Power } from 'lucide-react';
 import { API, SOCKET_URL } from '../api';
 
 const AdminDashboard = () => {
@@ -42,8 +42,26 @@ const AdminDashboard = () => {
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [pincodeError, setPincodeError] = useState('');
 
-  // Active section state: 'stats' | 'createUser' | 'rhpApps'
+  // Active section state: 'stats' | 'createUser' | 'rhpApps' | 'fieldManagers'
   const [activeSection, setActiveSection] = useState('stats');
+
+  // Field Managers management state
+  const [fmList, setFmList] = useState([]);
+  const [fmListLoading, setFmListLoading] = useState(false);
+  const [fmDetail, setFmDetail] = useState(null);
+  const [fmDetailLoading, setFmDetailLoading] = useState(false);
+  const [fmVisits, setFmVisits] = useState([]);
+  const [fmVisitsTotal, setFmVisitsTotal] = useState(0);
+  const [fmVisitsPage, setFmVisitsPage] = useState(1);
+  const [fmVisitsLoading, setFmVisitsLoading] = useState(false);
+  const [fmVisitSearch, setFmVisitSearch] = useState('');
+  const [fmVisitDateStart, setFmVisitDateStart] = useState('');
+  const [fmVisitDateEnd, setFmVisitDateEnd] = useState('');
+  const [fmVisitStatus, setFmVisitStatus] = useState('');
+  const [fmVisitUserId, setFmVisitUserId] = useState(null);
+  const [fmExpandedTeams, setFmExpandedTeams] = useState({});
+  const [fmReassignFoId, setFmReassignFoId] = useState(null);
+  const [fmReassignTargetId, setFmReassignTargetId] = useState('');
 
   // RHP Applications management state
   const [rhpApps, setRhpApps] = useState([]);
@@ -90,7 +108,18 @@ const AdminDashboard = () => {
 
     // 2. Initialize Socket.io connection with JWT auth token
     socketRef.current = io(SOCKET_URL, {
-      auth: { token: `Bearer ${token}` }
+      auth: { token: `Bearer ${token}` },
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 2000
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log('Admin socket connected, id:', socketRef.current.id);
+    });
+
+    socketRef.current.on('connect_error', (err) => {
+      console.error('Admin socket connection error:', err.message);
     });
 
     // Handle incoming live FO location updates
@@ -123,8 +152,14 @@ const AdminDashboard = () => {
       }
     });
 
+    // 3. Poll live locations every 30 seconds as a fallback in case socket events are missed
+    const pollInterval = setInterval(() => {
+      fetchLiveLocations();
+    }, 30000);
+
     // Cleanup on unmount
     return () => {
+      clearInterval(pollInterval);
       if (socketRef.current) socketRef.current.disconnect();
       if (mapInstance.current) {
         mapInstance.current.remove();
@@ -133,27 +168,49 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  // Initialize Map container once the DOM ref is ready
-  useEffect(() => {
-    if (mapRef.current && !mapInstance.current) {
-      // Coordinates centered on Bihar, India (Patna region)
-      mapInstance.current = L.map(mapRef.current).setView([25.5941, 85.1376], 7.5);
-      
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(mapInstance.current);
-
-      // Fix default Leaflet marker assets path
-      delete L.Icon.Default.prototype._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
-      });
-      
-      // Fetch initial active live locations
-      fetchLiveLocations();
+  // Initialize Map using a callback ref for reliable DOM attachment
+  // This avoids React StrictMode / conditional render timing issues
+  const initMap = useCallback((node) => {
+    // Store the ref for other code that reads mapRef.current
+    mapRef.current = node;
+    
+    if (!node) {
+      // Node unmounted — clean up the map
+      if (mapInstance.current) {
+        mapInstance.current.remove();
+        mapInstance.current = null;
+        markers.current = {};
+      }
+      return;
     }
+
+    // Avoid double-init (StrictMode or rapid re-render)
+    if (mapInstance.current) return;
+
+    // Create the Leaflet map
+    mapInstance.current = L.map(node).setView([22.5937, 78.9629], 5);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(mapInstance.current);
+
+    // Fix default Leaflet marker assets path
+    delete L.Icon.Default.prototype._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+      iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
+    });
+
+    // Force Leaflet to recalculate container size (fixes blank tiles on initial render)
+    setTimeout(() => {
+      if (mapInstance.current) {
+        mapInstance.current.invalidateSize();
+      }
+    }, 200);
+
+    // Fetch initial active live locations
+    fetchLiveLocations();
   }, []);
 
   // Fetch table data when tab, page, search, or date range changes
@@ -336,19 +393,13 @@ const AdminDashboard = () => {
         email: formData.email || undefined,
         role: createRole,
       };
-      if (createRole === 'field_officer') {
-        payload.pincode = formData.pincode;
-        payload.area = formData.area;
-        payload.city = formData.city;
-        payload.district = formData.district;
-        payload.state = formData.state;
-        payload.block = formData.block;
-        payload.coverageArea = formData.coverageArea;
-      } else {
-        payload.districtId = formData.districtId;
-        payload.blockId = formData.blockId;
-        payload.coverageArea = formData.coverageArea;
-      }
+      payload.pincode = formData.pincode;
+      payload.area = formData.area;
+      payload.city = formData.city;
+      payload.district = formData.district;
+      payload.state = formData.state;
+      payload.block = formData.block;
+      payload.coverageArea = formData.coverageArea;
       const res = await axios.post(`${API}/auth/provision`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -470,6 +521,94 @@ const AdminDashboard = () => {
     } catch (err) {
       console.error('Export error:', err);
       alert('Export failed. Please try again.');
+    }
+  };
+
+  // ── Field Managers Handlers ──
+  const fetchFieldManagers = useCallback(async () => {
+    setFmListLoading(true);
+    try {
+      const res = await axios.get(`${API}/dashboard/field-managers`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) setFmList(res.data.data);
+    } catch (err) {
+      console.error('Fetch field managers error:', err);
+      setFmList([]);
+    }
+    setFmListLoading(false);
+  }, [token]);
+
+  const fetchFmDetail = async (userId) => {
+    setFmDetailLoading(true);
+    try {
+      const res = await axios.get(`${API}/dashboard/field-managers/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) setFmDetail(res.data.data);
+    } catch (err) {
+      console.error('Fetch FM detail error:', err);
+    }
+    setFmDetailLoading(false);
+  };
+
+  const fetchFmVisitHistory = useCallback(async (userId) => {
+    setFmVisitsLoading(true);
+    try {
+      const params = new URLSearchParams({ page: fmVisitsPage, limit: 20 });
+      if (fmVisitSearch) params.append('search', fmVisitSearch);
+      if (fmVisitDateStart) params.append('startDate', fmVisitDateStart);
+      if (fmVisitDateEnd) params.append('endDate', fmVisitDateEnd);
+      if (fmVisitStatus) params.append('status', fmVisitStatus);
+
+      const res = await axios.get(`${API}/dashboard/field-managers/${userId}/visits?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) {
+        setFmVisits(res.data.data);
+        setFmVisitsTotal(res.data.total);
+      }
+    } catch (err) {
+      console.error('Fetch FM visit history error:', err);
+      setFmVisits([]);
+      setFmVisitsTotal(0);
+    }
+    setFmVisitsLoading(false);
+  }, [fmVisitsPage, fmVisitSearch, fmVisitDateStart, fmVisitDateEnd, fmVisitStatus, token]);
+
+  useEffect(() => {
+    if (fmVisitUserId) fetchFmVisitHistory(fmVisitUserId);
+  }, [fetchFmVisitHistory, fmVisitUserId]);
+
+  const handleToggleFmStatus = async (userId, currentlyActive) => {
+    const action = currentlyActive ? 'deactivate' : 'activate';
+    if (!window.confirm(`Are you sure you want to ${action} this Field Manager?`)) return;
+    try {
+      await axios.put(`${API}/dashboard/field-managers/${userId}/status`,
+        { isActive: !currentlyActive },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      fetchFieldManagers();
+      if (fmDetail && fmDetail.profile.id === userId) fetchFmDetail(userId);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to update status');
+    }
+  };
+
+  const handleReassignFo = async () => {
+    if (!fmReassignFoId || !fmReassignTargetId) return;
+    if (!window.confirm('Are you sure you want to reassign this Field Officer?')) return;
+    try {
+      await axios.put(`${API}/dashboard/field-managers/reassign-fo`,
+        { foId: fmReassignFoId, newManagerUserId: parseInt(fmReassignTargetId) },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setFmReassignFoId(null);
+      setFmReassignTargetId('');
+      if (fmDetail) fetchFmDetail(fmDetail.profile.id);
+      fetchFieldManagers();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to reassign');
     }
   };
 
@@ -628,8 +767,8 @@ const AdminDashboard = () => {
             <td className="td-cell font-semibold text-slate-800">{row.patient_first} {row.patient_last}<div className="text-[10px] text-slate-400">{row.age}y / {row.gender}</div></td>
             <td className="td-cell font-medium text-teal-700">{row.rhp_first} {row.rhp_last}<div className="text-[10px] text-slate-400">{row.rhp_center}</div></td>
             <td className="td-cell text-xs">{row.visual_acuity_left} / {row.visual_acuity_right}</td>
-            <td className="td-cell text-xs">{row.spherical_left?.toFixed(2) ?? '—'} / {row.spherical_right?.toFixed(2) ?? '—'}</td>
-            <td className="td-cell text-xs">{row.cylindrical_left?.toFixed(2) ?? '—'} / {row.cylindrical_right?.toFixed(2) ?? '—'}</td>
+            <td className="td-cell text-xs">{(row.spherical_left !== null && row.spherical_left !== undefined) ? parseFloat(row.spherical_left).toFixed(2) : '—'} / {(row.spherical_right !== null && row.spherical_right !== undefined) ? parseFloat(row.spherical_right).toFixed(2) : '—'}</td>
+            <td className="td-cell text-xs">{(row.cylindrical_left !== null && row.cylindrical_left !== undefined) ? parseFloat(row.cylindrical_left).toFixed(2) : '—'} / {(row.cylindrical_right !== null && row.cylindrical_right !== undefined) ? parseFloat(row.cylindrical_right).toFixed(2) : '—'}</td>
             <td className="td-cell">
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
                 {row.screening_type?.replace(/_/g, ' ')}
@@ -655,7 +794,7 @@ const AdminDashboard = () => {
                 {row.glass_type?.replace(/_/g, ' ')}
               </span>
             </td>
-            <td className="td-cell text-xs">{row.left_power_sph?.toFixed(2) ?? '—'} / {row.right_power_sph?.toFixed(2) ?? '—'}</td>
+            <td className="td-cell text-xs">{(row.left_power_sph !== null && row.left_power_sph !== undefined) ? parseFloat(row.left_power_sph).toFixed(2) : '—'} / {(row.right_power_sph !== null && row.right_power_sph !== undefined) ? parseFloat(row.right_power_sph).toFixed(2) : '—'}</td>
             <td className="td-cell font-semibold">₹{parseFloat(row.cost).toFixed(0)}</td>
             <td className="td-cell font-semibold text-emerald-700">₹{parseFloat(row.amount_paid).toFixed(0)}</td>
             <td className="td-cell text-xs text-slate-500 font-mono">{row.invoice_number}</td>
@@ -687,6 +826,10 @@ const AdminDashboard = () => {
             <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl font-semibold text-sm cursor-pointer transition-all ${activeSection === 'rhpApps' ? 'bg-indigo-500/15 text-indigo-400 border-l-4 border-indigo-500' : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'}`} onClick={() => { setActiveSection('rhpApps'); fetchRhpApps(); }}>
               <FileSpreadsheet className="w-5 h-5" />
               <span>RHP Applications</span>
+            </div>
+            <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl font-semibold text-sm cursor-pointer transition-all ${activeSection === 'fieldManagers' ? 'bg-amber-500/15 text-amber-400 border-l-4 border-amber-500' : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'}`} onClick={() => { setActiveSection('fieldManagers'); fetchFieldManagers(); }}>
+              <Briefcase className="w-5 h-5" />
+              <span>Field Managers</span>
             </div>
             <div className="px-4 py-2 text-[11px] font-semibold text-slate-500 uppercase tracking-widest mt-6">Logged Profile</div>
             <div className="px-4 py-2">
@@ -804,8 +947,7 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-                {/* Location — pincode auto-fill for FO, district+block dropdowns for FM/PD */}
-                {createRole === 'field_officer' ? (
+                {/* Location — pincode auto-fill for all roles */}
                   <div className="space-y-4 p-4 bg-teal-50/40 rounded-xl border border-teal-100">
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pincode *</label>
@@ -856,24 +998,6 @@ const AdminDashboard = () => {
                       />
                     </div>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">District *</label>
-                      <select required value={formData.districtId} onChange={e => handleFormChange('districtId', e.target.value)} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm appearance-none">
-                        <option value="">Select district...</option>
-                        {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Block *</label>
-                      <select required value={formData.blockId} onChange={e => handleFormChange('blockId', e.target.value)} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm appearance-none" disabled={!formData.districtId}>
-                        <option value="">{formData.districtId ? 'Select block...' : 'Select district first'}</option>
-                        {blocks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
 
                 {/* Coverage Area (all roles) */}
                 <div className="p-4 bg-teal-50/50 rounded-xl border border-teal-100">
@@ -999,7 +1123,7 @@ const AdminDashboard = () => {
               <span className="text-xs text-slate-400">Updates dynamically</span>
             </div>
             <div className="flex-1 w-full relative bg-slate-100 rounded-xl overflow-hidden shadow-inner">
-              <div ref={mapRef} className="absolute inset-0"></div>
+              <div ref={initMap} className="absolute inset-0"></div>
             </div>
           </div>
 
@@ -1204,7 +1328,7 @@ const AdminDashboard = () => {
         </div>
 
         </>
-        ) : (
+        ) : activeSection === 'rhpApps' ? (
         <>
         {/* ================================================================ */}
         {/* RHP APPLICATIONS MANAGEMENT PANEL                                */}
@@ -1479,7 +1603,440 @@ const AdminDashboard = () => {
           )}
         </div>
         </>
+        ) : activeSection === 'fieldManagers' ? (
+        <>
+        {/* ================================================================ */}
+        {/* FIELD MANAGERS MANAGEMENT PANEL                                  */}
+        {/* ================================================================ */}
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Field Manager Overview</h1>
+              <p className="text-slate-500 text-sm mt-1">Comprehensive view of all Field Managers, their teams, and performance metrics</p>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button onClick={fetchFieldManagers} className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 text-xs font-bold transition-all">
+                <RefreshCw className="w-3.5 h-3.5" /><span>Refresh</span>
+              </button>
+              <span className="px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">{fmList.length} Manager{fmList.length !== 1 ? 's' : ''}</span>
+            </div>
+          </div>
+
+          {/* FM Cards Grid */}
+          {fmListLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : fmList.length === 0 ? (
+            <div className="bg-white rounded-2xl border shadow-sm p-16 text-center">
+              <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-400 text-sm">No Field Managers found. Create one from the "Create User" section.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+              {fmList.map(fm => (
+                <div key={fm.id} className="bg-white rounded-2xl border shadow-sm p-5 flex flex-col justify-between hover:shadow-md transition-all">
+                  {/* Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white font-bold text-sm shadow-md">
+                        {fm.first_name?.[0]}{fm.last_name?.[0]}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-800 text-sm">{fm.first_name} {fm.last_name}</h3>
+                        <p className="text-[11px] text-slate-400">{fm.email}</p>
+                      </div>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${fm.is_active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                      {fm.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+
+                  {/* Stats Row */}
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    <div className="bg-slate-50 rounded-xl p-2.5 text-center">
+                      <p className="text-lg font-black text-slate-800">{fm.active_fo_count || 0}</p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Active FOs</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-2.5 text-center">
+                      <p className="text-lg font-black text-slate-800">{fm.team_count || 0}</p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Teams</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-2.5 text-center">
+                      <p className="text-lg font-black text-slate-800">{fm.total_visits || 0}</p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Visits</p>
+                    </div>
+                  </div>
+
+                  {/* Info rows */}
+                  <div className="space-y-1.5 mb-4 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium">Phone</span>
+                      <span className="text-slate-700 font-semibold">{fm.phone || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium">RHP Coverage</span>
+                      <span className="text-slate-700 font-semibold">{fm.rhp_coverage || 0} centers</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium">Completion Rate</span>
+                      <span className="text-slate-700 font-semibold">{fm.total_visits > 0 ? Math.round((fm.completed_visits / fm.total_visits) * 100) : 0}%</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium">Last Visit</span>
+                      <span className="text-slate-700 font-semibold">{fm.last_visit_date ? formatDate(fm.last_visit_date) : 'Never'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 font-medium">Last Login</span>
+                      <span className="text-slate-700 font-semibold">{fm.last_login ? formatDate(fm.last_login) : 'Never'}</span>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
+                    <button onClick={() => fetchFmDetail(fm.id)} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition-all">View Profile</button>
+                    <button onClick={() => { setFmVisitUserId(fm.id); setFmVisitsPage(1); setFmVisitSearch(''); setFmVisitDateStart(''); setFmVisitDateEnd(''); setFmVisitStatus(''); }} className="flex-1 py-2 rounded-xl text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-all">Visit History</button>
+                    <button onClick={() => handleToggleFmStatus(fm.id, fm.is_active)} className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${fm.is_active ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'}`}>
+                      <Power className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* FM DETAIL MODAL */}
+        {fmDetail && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-6 overflow-y-auto" onClick={() => setFmDetail(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 mb-10" onClick={e => e.stopPropagation()}>
+              {fmDetailLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <>
+                {/* Modal Header */}
+                <div className="flex items-center justify-between p-6 border-b">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                      {fmDetail.profile.first_name?.[0]}{fmDetail.profile.last_name?.[0]}
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-slate-900">{fmDetail.profile.first_name} {fmDetail.profile.last_name}</h2>
+                      <p className="text-sm text-slate-500">{fmDetail.profile.email} · {fmDetail.profile.phone}</p>
+                      <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${fmDetail.profile.is_active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                        {fmDetail.profile.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                  </div>
+                  <button onClick={() => setFmDetail(null)} className="p-2 rounded-xl hover:bg-slate-50"><X className="w-5 h-5 text-slate-400" /></button>
+                </div>
+
+                <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+                  {/* Performance Metrics Cards */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Performance Metrics</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[
+                        ['Total Visits', fmDetail.metrics?.visits?.total_visits || 0, 'bg-amber-50 text-amber-700'],
+                        ['Completed', fmDetail.metrics?.visits?.completed || 0, 'bg-emerald-50 text-emerald-700'],
+                        ['Pending', fmDetail.metrics?.visits?.pending || 0, 'bg-blue-50 text-blue-700'],
+                        ['This Month', fmDetail.metrics?.visits?.this_month || 0, 'bg-purple-50 text-purple-700'],
+                      ].map(([label, val, color]) => (
+                        <div key={label} className={`${color} rounded-xl p-3 text-center`}>
+                          <p className="text-2xl font-black">{val}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-70">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mt-3">
+                      <div className="bg-slate-50 rounded-xl p-3 text-center">
+                        <p className="text-lg font-black text-slate-800">{fmDetail.metrics?.visits?.last_month || 0}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Last Month</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3 text-center">
+                        <p className="text-lg font-black text-slate-800">{fmDetail.metrics?.reports?.total_reports || 0}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Reports</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl p-3 text-center">
+                        <p className="text-lg font-black text-slate-800">{fmDetail.metrics?.visits?.total_visits > 0 ? Math.round(((fmDetail.metrics?.visits?.completed || 0) / fmDetail.metrics?.visits?.total_visits) * 100) : 0}%</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Completion %</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Field Officers Table */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Assigned Field Officers ({fmDetail.fieldOfficers?.length || 0})</h3>
+                    {fmDetail.fieldOfficers?.length === 0 ? (
+                      <p className="text-sm text-slate-400 bg-slate-50 rounded-xl p-4 text-center">No Field Officers assigned</p>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border">
+                        <table className="w-full text-sm text-left">
+                          <thead><tr>
+                            <th className="th-cell">Name</th>
+                            <th className="th-cell">Phone</th>
+                            <th className="th-cell">District</th>
+                            <th className="th-cell">Block</th>
+                            <th className="th-cell">Status</th>
+                            <th className="th-cell">Actions</th>
+                          </tr></thead>
+                          <tbody>
+                            {fmDetail.fieldOfficers.map((fo, i) => (
+                              <tr key={fo.fo_id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                                <td className="td-cell font-semibold text-slate-800">{fo.first_name} {fo.last_name}</td>
+                                <td className="td-cell text-xs">{fo.phone}</td>
+                                <td className="td-cell">{fo.district_name}</td>
+                                <td className="td-cell">{fo.block_name}</td>
+                                <td className="td-cell">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${fo.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>{fo.status}</span>
+                                </td>
+                                <td className="td-cell">
+                                  {fmReassignFoId === fo.fo_id ? (
+                                    <div className="flex items-center space-x-1">
+                                      <select value={fmReassignTargetId} onChange={e => setFmReassignTargetId(e.target.value)} className="px-2 py-1 border rounded-lg text-[11px] bg-white">
+                                        <option value="">Select FM</option>
+                                        {fmList.filter(m => m.id !== fmDetail.profile.id).map(m => <option key={m.id} value={m.id}>{m.first_name} {m.last_name}</option>)}
+                                      </select>
+                                      <button onClick={handleReassignFo} disabled={!fmReassignTargetId} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-teal-50 text-teal-600 hover:bg-teal-100 disabled:opacity-40 transition-all">Go</button>
+                                      <button onClick={() => { setFmReassignFoId(null); setFmReassignTargetId(''); }} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all">×</button>
+                                    </div>
+                                  ) : (
+                                    <button onClick={() => setFmReassignFoId(fo.fo_id)} className="px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all">Reassign</button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Teams */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Teams ({fmDetail.teams?.length || 0})</h3>
+                    {fmDetail.teams?.length === 0 ? (
+                      <p className="text-sm text-slate-400 bg-slate-50 rounded-xl p-4 text-center">No teams created</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {fmDetail.teams.map(team => (
+                          <div key={team.id} className="bg-slate-50 rounded-xl border">
+                            <div className="flex items-center justify-between p-3 cursor-pointer" onClick={() => setFmExpandedTeams(prev => ({ ...prev, [team.id]: !prev[team.id] }))}>
+                              <div className="flex items-center space-x-3">
+                                <Users className="w-4 h-4 text-amber-500" />
+                                <span className="font-bold text-slate-800 text-sm">{team.name}</span>
+                                <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[10px] font-bold">{team.member_count} members</span>
+                              </div>
+                              {fmExpandedTeams[team.id] ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                            </div>
+                            {fmExpandedTeams[team.id] && team.members && (
+                              <div className="px-3 pb-3 space-y-1">
+                                {team.members.map(m => (
+                                  <div key={m.fo_id} className="flex items-center justify-between bg-white rounded-lg p-2 text-xs">
+                                    <span className="font-semibold text-slate-700">{m.first_name} {m.last_name}</span>
+                                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${m.fo_status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{m.fo_status}</span>
+                                  </div>
+                                ))}
+                                {team.members.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No members</p>}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* RHPs in territory */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">RHP Centers Visited ({fmDetail.rhps?.length || 0})</h3>
+                    {fmDetail.rhps?.length === 0 ? (
+                      <p className="text-sm text-slate-400 bg-slate-50 rounded-xl p-4 text-center">No RHP visits recorded</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {fmDetail.rhps.map(rhp => (
+                          <div key={rhp.id} className="bg-slate-50 rounded-xl p-3 border">
+                            <p className="font-bold text-slate-800 text-sm">{rhp.center_name || 'Unnamed Center'}</p>
+                            <p className="text-[11px] text-slate-500">{rhp.rhp_first} {rhp.rhp_last} · {rhp.village}</p>
+                            <p className="text-[10px] text-slate-400">{rhp.district_name}, {rhp.block_name}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Live Locations */}
+                  {fmDetail.liveLocations?.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Live FO Locations ({fmDetail.liveLocations.length})</h3>
+                      <div className="space-y-2">
+                        {fmDetail.liveLocations.map(loc => (
+                          <div key={loc.fo_id} className="flex items-center justify-between bg-emerald-50 rounded-xl p-3 border border-emerald-200">
+                            <div className="flex items-center space-x-2">
+                              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                              <span className="font-bold text-emerald-800 text-sm">{loc.first_name} {loc.last_name}</span>
+                            </div>
+                            <span className="text-[11px] text-emerald-600">{parseFloat(loc.latitude).toFixed(4)}, {parseFloat(loc.longitude).toFixed(4)} · Battery: {loc.battery_level}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recent Activity Timeline */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Recent Activity</h3>
+                    {fmDetail.recentActivity?.length === 0 ? (
+                      <p className="text-sm text-slate-400 bg-slate-50 rounded-xl p-4 text-center">No recent activity</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {fmDetail.recentActivity?.map(act => (
+                          <div key={act.id} className="flex items-start space-x-3 p-3 bg-slate-50 rounded-xl border">
+                            <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${act.status === 'completed' ? 'bg-emerald-500' : act.status === 'planned' ? 'bg-blue-500' : 'bg-slate-400'}`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-slate-800">
+                                {act.fo_first} {act.fo_last}
+                                {act.rhp_center && <span className="text-slate-400 font-normal"> → {act.rhp_center}</span>}
+                              </p>
+                              <p className="text-[11px] text-slate-500">{act.purpose?.replace(/_/g, ' ')} · {formatDate(act.visit_date)}</p>
+                              {act.notes && <p className="text-[11px] text-slate-400 truncate mt-0.5">{act.notes}</p>}
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border flex-shrink-0 ${
+                              act.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : act.status === 'planned' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200'
+                            }`}>{act.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Personal Details */}
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Account Details</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[['User ID', fm.id || fmDetail.profile.id], ['Email', fmDetail.profile.email], ['Phone', fmDetail.profile.phone],
+                        ['Created', formatDate(fmDetail.profile.created_at)], ['Last Login', fmDetail.profile.last_login ? formatDate(fmDetail.profile.last_login) : 'Never'],
+                        ['Role', 'Field Manager']
+                      ].map(([label, val]) => (
+                        <div key={label} className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
+                          <p className="text-sm font-semibold text-slate-800 mt-0.5">{val || '—'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-6 border-t flex items-center justify-between">
+                  <button onClick={() => handleToggleFmStatus(fmDetail.profile.id, fmDetail.profile.is_active)} className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all border ${fmDetail.profile.is_active ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'}`}>
+                    {fmDetail.profile.is_active ? 'Deactivate Account' : 'Activate Account'}
+                  </button>
+                  <button onClick={() => { setFmVisitUserId(fmDetail.profile.id); setFmVisitsPage(1); setFmDetail(null); }} className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm shadow-md transition-all">View Full Visit History</button>
+                </div>
+                </>
+              )}
+            </div>
+          </div>
         )}
+
+        {/* FM VISIT HISTORY MODAL */}
+        {fmVisitUserId && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-6 overflow-y-auto" onClick={() => { setFmVisitUserId(null); setFmVisits([]); }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-4 mb-10" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-6 border-b">
+                <div>
+                  <h2 className="text-xl font-extrabold text-slate-900">Visit History</h2>
+                  <p className="text-sm text-slate-500">All visits by Field Officers under this manager</p>
+                </div>
+                <button onClick={() => { setFmVisitUserId(null); setFmVisits([]); }} className="p-2 rounded-xl hover:bg-slate-50"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+
+              {/* Filters */}
+              <div className="px-6 py-4 flex flex-wrap gap-3 border-b bg-slate-50/50">
+                <div className="relative flex-1 min-w-[180px] max-w-[300px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input type="text" placeholder="Search FO or RHP center..." value={fmVisitSearch}
+                    onChange={e => { setFmVisitSearch(e.target.value); setFmVisitsPage(1); }}
+                    className="w-full pl-9 pr-3 py-2.5 border rounded-xl bg-white focus:outline-none focus:border-amber-500 text-sm" />
+                </div>
+                <select value={fmVisitStatus} onChange={e => { setFmVisitStatus(e.target.value); setFmVisitsPage(1); }}
+                  className="px-3 py-2.5 border rounded-xl bg-white text-sm focus:outline-none focus:border-amber-500">
+                  <option value="">All Status</option>
+                  <option value="completed">Completed</option>
+                  <option value="planned">Planned</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <input type="date" value={fmVisitDateStart} onChange={e => { setFmVisitDateStart(e.target.value); setFmVisitsPage(1); }}
+                  className="px-3 py-2.5 border rounded-xl bg-white text-sm" />
+                <input type="date" value={fmVisitDateEnd} onChange={e => { setFmVisitDateEnd(e.target.value); setFmVisitsPage(1); }}
+                  className="px-3 py-2.5 border rounded-xl bg-white text-sm" />
+              </div>
+
+              {/* Visit Table */}
+              <div className="p-6">
+                {fmVisitsLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border">
+                    <table className="w-full text-sm text-left">
+                      <thead><tr>
+                        <th className="th-cell">Date</th>
+                        <th className="th-cell">Field Officer</th>
+                        <th className="th-cell">RHP Center</th>
+                        <th className="th-cell">Purpose</th>
+                        <th className="th-cell">Status</th>
+                        <th className="th-cell">GPS</th>
+                        <th className="th-cell">Notes</th>
+                        <th className="th-cell">Proof</th>
+                      </tr></thead>
+                      <tbody>
+                        {fmVisits.length === 0 ? (
+                          <tr><td colSpan="8" className="text-center py-16">
+                            <div className="flex flex-col items-center space-y-3">
+                              <ClipboardList className="w-10 h-10 text-slate-300" />
+                              <p className="text-slate-400 text-sm">No visits found</p>
+                            </div>
+                          </td></tr>
+                        ) : fmVisits.map((row, i) => (
+                          <tr key={row.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                            <td className="td-cell font-medium">{formatDate(row.visit_date)}</td>
+                            <td className="td-cell font-semibold text-slate-800">{row.fo_first} {row.fo_last}</td>
+                            <td className="td-cell">{row.rhp_center || <span className="text-slate-300">—</span>}</td>
+                            <td className="td-cell"><span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">{row.purpose?.replace(/_/g, ' ')}</span></td>
+                            <td className="td-cell"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${row.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : row.status === 'planned' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>{row.status}</span></td>
+                            <td className="td-cell text-[11px] text-slate-400">{row.latitude ? `${parseFloat(row.latitude).toFixed(4)}, ${parseFloat(row.longitude).toFixed(4)}` : '—'}</td>
+                            <td className="td-cell text-xs text-slate-500 max-w-[200px] truncate" title={row.notes}>{row.notes || '—'}</td>
+                            <td className="td-cell">{row.proof_image_url ? (
+                              <a href={row.proof_image_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-1 text-teal-600 hover:text-teal-700 text-xs font-semibold"><ExternalLink className="w-3.5 h-3.5" /><span>View</span></a>
+                            ) : <span className="text-slate-300 text-xs">—</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Pagination */}
+              {fmVisitsTotal > 20 && (
+                <div className="flex items-center justify-between px-6 py-4 border-t bg-slate-50/50">
+                  <span className="text-xs text-slate-500">Showing {(fmVisitsPage - 1) * 20 + 1}–{Math.min(fmVisitsPage * 20, fmVisitsTotal)} of {fmVisitsTotal}</span>
+                  <div className="flex items-center space-x-2">
+                    <button disabled={fmVisitsPage <= 1} onClick={() => setFmVisitsPage(p => p - 1)} className="p-2 rounded-lg border hover:bg-white disabled:opacity-30 transition-all"><ChevronLeft className="w-4 h-4" /></button>
+                    <span className="text-xs font-bold text-slate-600">Page {fmVisitsPage}</span>
+                    <button disabled={fmVisitsPage * 20 >= fmVisitsTotal} onClick={() => setFmVisitsPage(p => p + 1)} className="p-2 rounded-lg border hover:bg-white disabled:opacity-30 transition-all"><ChevronRight className="w-4 h-4" /></button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        </>
+        ) : null}
 
       </main>
 

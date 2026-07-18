@@ -359,7 +359,7 @@ const RHPDashboard = () => {
           </div>
           <div>
             <h1 className="text-base font-bold leading-tight">{user.firstName}'s Vision Center</h1>
-            <p className="text-[10px] text-slate-400">Bihar Rural Health Provider (RHP) Portal</p>
+            <p className="text-[10px] text-slate-400">Rural Health Provider (RHP) Portal</p>
           </div>
         </div>
         <div className="flex items-center space-x-3">
@@ -726,7 +726,7 @@ const RHPDashboard = () => {
                       inventory.map(item => (
                         <tr key={item.id} className="border-b hover:bg-slate-50/50">
                           <td className="p-3 font-mono text-[11px] text-slate-600">{item.sku}</td>
-                          <td className="p-3 font-semibold text-slate-800">SPH +{item.left_power_sph?.toFixed(2)}</td>
+                          <td className="p-3 font-semibold text-slate-800">SPH +{parseFloat(item.left_power_sph || 0).toFixed(2)}</td>
                           <td className={`p-3 text-center font-bold ${item.quantity <= item.safety_stock_level ? 'text-rose-500' : 'text-slate-800'}`}>
                             {item.quantity}
                           </td>

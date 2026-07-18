@@ -261,15 +261,50 @@ const changePassword = async (req, res) => {
 // Provision User — Admin creates FO or RHP with full profile in one transaction
 // ============================================================================
 const provisionUser = async (req, res) => {
-  const { firstName, lastName, phone, email, role, districtId, blockId, centerName, village, coverageArea } = req.body;
+  const { firstName, lastName, phone, email, role, centerName, village, coverageArea } = req.body;
+  // Accept both numeric IDs (from dropdowns) and text names (from pincode lookup)
+  let { districtId, blockId } = req.body;
+  const { pincode, area, city, district, state, block } = req.body;
 
   // Validate common fields
-  if (!firstName || !lastName || !phone || !role || !districtId || !blockId) {
-    return res.status(400).json({ success: false, error: 'Required fields: firstName, lastName, phone, role, districtId, blockId' });
+  if (!firstName || !lastName || !phone || !role) {
+    return res.status(400).json({ success: false, error: 'Required fields: firstName, lastName, phone, role' });
   }
 
-  if (!['field_officer', 'rhp'].includes(role)) {
-    return res.status(400).json({ success: false, error: 'Role must be either field_officer or rhp' });
+  if (!['field_officer', 'field_manager', 'program_director', 'rhp'].includes(role)) {
+    return res.status(400).json({ success: false, error: 'Role must be field_officer, field_manager, program_director, or rhp' });
+  }
+
+  // For field_officer, field_manager, program_director: resolve text-based location to IDs if numeric IDs not provided
+  if (['field_officer', 'field_manager', 'program_director'].includes(role) && !districtId && district) {
+    const connection2 = await db.getConnection();
+    try {
+      // Find or create district
+      let [dRows] = await connection2.query('SELECT id FROM districts WHERE name = ?', [district]);
+      if (dRows.length === 0) {
+        const [dInsert] = await connection2.query('INSERT INTO districts (name) VALUES (?)', [district]);
+        districtId = dInsert.insertId;
+      } else {
+        districtId = dRows[0].id;
+      }
+
+      // Find or create block (use the block text, or fall back to area/city)
+      const blockName = block || area || city || 'Default';
+      let [bRows] = await connection2.query('SELECT id FROM blocks WHERE district_id = ? AND name = ?', [districtId, blockName]);
+      if (bRows.length === 0) {
+        const [bInsert] = await connection2.query('INSERT INTO blocks (district_id, name) VALUES (?, ?)', [districtId, blockName]);
+        blockId = bInsert.insertId;
+      } else {
+        blockId = bRows[0].id;
+      }
+    } finally {
+      connection2.release();
+    }
+  }
+
+  // For roles that require district/block IDs
+  if (['field_officer', 'field_manager', 'program_director', 'rhp'].includes(role) && (!districtId || !blockId)) {
+    return res.status(400).json({ success: false, error: 'District and Block information is required. Please enter a valid pincode or select from dropdown.' });
   }
 
   // RHP-specific validation
@@ -350,9 +385,10 @@ const provisionUser = async (req, res) => {
 
     await connection.commit();
 
+    const roleLabels = { field_officer: 'Field Officer', field_manager: 'Field Manager', program_director: 'Program Director', rhp: 'RHP' };
     res.status(201).json({
       success: true,
-      message: `${role === 'rhp' ? 'RHP' : 'Field Officer'} account provisioned successfully`,
+      message: `${roleLabels[role] || role} account provisioned successfully`,
       data: {
         userId,
         email: generatedEmail,

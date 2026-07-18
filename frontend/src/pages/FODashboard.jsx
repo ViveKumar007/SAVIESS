@@ -48,7 +48,22 @@ const FODashboard = () => {
 
     // Setup Socket connection for real-time geolocation tracking
     socketRef.current = io(SOCKET_URL, {
-      auth: { token: `Bearer ${token}` }
+      auth: { token: `Bearer ${token}` },
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 2000
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log('FO socket connected, id:', socketRef.current.id);
+      // If we were tracking before reconnect, re-register with server
+      if (isTracking) {
+        socketRef.current.emit('fo_start_tracking');
+      }
+    });
+
+    socketRef.current.on('connect_error', (err) => {
+      console.error('FO socket connection error:', err.message);
     });
 
     return () => {
@@ -254,7 +269,7 @@ const FODashboard = () => {
           </div>
           <div>
             <h1 className="text-base font-bold leading-tight">Field Officer Shift Logs</h1>
-            <p className="text-[10px] text-slate-400">Bihar Vision Entrepreneur Program</p>
+            <p className="text-[10px] text-slate-400">SAVIESS Vision Entrepreneur Program</p>
           </div>
         </div>
         <button

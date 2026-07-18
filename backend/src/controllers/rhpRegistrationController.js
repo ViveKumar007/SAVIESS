@@ -60,6 +60,7 @@ const submitRegistration = async (req, res) => {
       'fullName', 'gender', 'age', 'dateOfBirth', 'phone', 'email',
       'aadhaarNumber', 'panNumber', 'qualification', 'registrationNumber',
       'registrationAuthority', 'yearsOfExperience', 'districtId', 'blockId',
+      'district', 'block',
       'village', 'clinicName', 'address', 'state', 'pinCode',
       'hasConsultationSpace', 'hasScreeningSpace', 'hasElectricity',
       'hasSmartphone', 'hasInternet', 'storageSpace', 'medicineShop',
@@ -77,13 +78,14 @@ const submitRegistration = async (req, res) => {
       'registrationNumber', 'registrationAuthority', 'village', 'clinicName',
       'address', 'state', 'pinCode', 'storageSpace', 'medicineShop',
       'healthCampExperience', 'eyeCareExperience', 'whyJoinReason',
-      'bankAccountHolder', 'bankName', 'bankAccountNumber', 'bankIfsc', 'phone'
+      'bankAccountHolder', 'bankName', 'bankAccountNumber', 'bankIfsc', 'phone',
+      'district', 'block'
     ];
     for (const f of textFields) {
       data[f] = sanitize(data[f]);
     }
 
-    const isDraft = data.isDraft === true || data.isDraft === 'true' || data.isDraft === 1;
+    const isDraft = false; // Draft functionality removed — all submissions are final
 
     // ── Required fields validation (skip for drafts) ──
     if (!isDraft) {
@@ -160,10 +162,10 @@ const submitRegistration = async (req, res) => {
         parseInt(data.yearsOfExperience) || 0,
         data.districtId ? parseInt(data.districtId) : null,
         data.blockId ? parseInt(data.blockId) : null,
-        data.village || null,
+        data.village || data.district || null,
         data.clinicName || null,
         data.address || null,
-        data.state || 'Bihar',
+        data.state || null,
         data.pinCode || null,
         data.hasConsultationSpace ? 1 : 0,
         data.hasScreeningSpace ? 1 : 0,
@@ -182,8 +184,8 @@ const submitRegistration = async (req, res) => {
         data.bankAccountNumber || null,
         data.bankIfsc ? data.bankIfsc.toUpperCase() : null,
         data.declarationAgreed ? 1 : 0,
-        isDraft ? 1 : 0,
-        isDraft ? 'applied' : 'applied'
+        0,
+        'applied'
       ]
     );
 
@@ -233,7 +235,7 @@ const submitRegistration = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: isDraft ? 'Application saved as draft' : 'RHP Application submitted successfully',
+      message: 'RHP Application submitted successfully',
       data: {
         applicationId,
         applicationCode,
@@ -259,7 +261,7 @@ const getApplications = async (req, res) => {
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
   try {
-    let whereClause = 'WHERE 1=1';
+    let whereClause = 'WHERE a.is_draft = 0';
     const params = [];
 
     if (search) {
@@ -569,7 +571,7 @@ const exportApplications = async (req, res) => {
   const { format = 'xlsx', search, status, districtId, state, experience, startDate, endDate } = req.query;
 
   try {
-    let whereClause = 'WHERE 1=1';
+    let whereClause = 'WHERE a.is_draft = 0';
     const params = [];
 
     if (search) {

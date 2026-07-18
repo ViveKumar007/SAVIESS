@@ -13,9 +13,28 @@ async function seed() {
   try {
     await connection.beginTransaction();
 
-    // 1. Seed Districts
+    // 1. Seed States (All 28 States + 8 Union Territories)
+    console.log('Seeding states...');
+    await connection.query(`INSERT IGNORE INTO states (name, code) VALUES
+      ('Andhra Pradesh', 'AP'), ('Arunachal Pradesh', 'AR'), ('Assam', 'AS'), ('Bihar', 'BR'),
+      ('Chhattisgarh', 'CG'), ('Goa', 'GA'), ('Gujarat', 'GJ'), ('Haryana', 'HR'),
+      ('Himachal Pradesh', 'HP'), ('Jharkhand', 'JH'), ('Karnataka', 'KA'), ('Kerala', 'KL'),
+      ('Madhya Pradesh', 'MP'), ('Maharashtra', 'MH'), ('Manipur', 'MN'), ('Meghalaya', 'ML'),
+      ('Mizoram', 'MZ'), ('Nagaland', 'NL'), ('Odisha', 'OD'), ('Punjab', 'PB'),
+      ('Rajasthan', 'RJ'), ('Sikkim', 'SK'), ('Tamil Nadu', 'TN'), ('Telangana', 'TG'),
+      ('Tripura', 'TR'), ('Uttar Pradesh', 'UP'), ('Uttarakhand', 'UK'), ('West Bengal', 'WB'),
+      ('Andaman and Nicobar Islands', 'AN'), ('Chandigarh', 'CH'),
+      ('Dadra and Nagar Haveli and Daman and Diu', 'DD'), ('Delhi', 'DL'),
+      ('Jammu and Kashmir', 'JK'), ('Ladakh', 'LA'), ('Lakshadweep', 'LD'), ('Puducherry', 'PY')
+    `);
+
+    // Get Bihar state_id for linking districts
+    const [biharRows] = await connection.query('SELECT id FROM states WHERE code = "BR"');
+    const biharStateId = biharRows.length > 0 ? biharRows[0].id : null;
+
+    // 2. Seed Districts (Bihar)
     console.log('Seeding districts...');
-    await connection.query('INSERT IGNORE INTO districts (id, name) VALUES (1, "Patna"), (2, "Nalanda"), (3, "Gaya")');
+    await connection.query('INSERT IGNORE INTO districts (id, name, state_id) VALUES (1, "Patna", ?), (2, "Nalanda", ?), (3, "Gaya", ?)', [biharStateId, biharStateId, biharStateId]);
 
     // 2. Seed Blocks
     console.log('Seeding blocks...');
