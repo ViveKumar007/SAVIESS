@@ -4,8 +4,11 @@
   "description": "SAVIESS Vision Entrepreneur Platform - Monorepo",
   "private": true,
   "scripts": {
+    "setup": "powershell -ExecutionPolicy Bypass -File setup.ps1",
+    "start": "npm run dev",
     "dev": "concurrently -n BACKEND,FRONTEND -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
     "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "db:migrate": "powershell -ExecutionPolicy Bypass -Command \"Get-Content database/schema.sql | mysql -u root; Get-Content database/migration_add_states.sql | mysql -u root saviess_vep; Get-Content database/migration_v2.sql | mysql -u root saviess_vep; Get-Content database/migration_fm_teams.sql | mysql -u root saviess_vep; Get-Content database/migration_pd_module.sql | mysql -u root saviess_vep; Get-Content database/migration_rhp_registration.sql | mysql -u root saviess_vep; Get-Content database/migration_rhp_cloud.sql | mysql -u root saviess_vep\"",
     "seed": "node backend/src/config/seed.js"
   },
   "devDependencies": {

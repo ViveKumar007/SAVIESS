@@ -160,6 +160,50 @@ async function seed() {
        ON DUPLICATE KEY UPDATE total_quantity = VALUES(total_quantity)`
     );
 
+    // 7. Seed PD Module — Eyeglass Colors & Sample Stock
+    console.log('Seeding PD eyeglass colors & stock...');
+    
+    // Ensure default colors exist (migration may have already inserted them)
+    await connection.query(`INSERT IGNORE INTO pd_eyeglass_colors (name, hex_code, emoji) VALUES
+      ('Red',   '#EF4444', '🔴'),
+      ('Brown', '#92400E', '🟤'),
+      ('Blue',  '#3B82F6', '🔵')
+    `);
+
+    // Get color IDs
+    const [colorRows] = await connection.query('SELECT id, name FROM pd_eyeglass_colors ORDER BY id ASC');
+    const colorMap = {};
+    for (const c of colorRows) { colorMap[c.name] = c.id; }
+
+    // Initialize stock rows (if not already present)
+    for (const c of colorRows) {
+      await connection.query(
+        'INSERT IGNORE INTO pd_eyeglass_stock (color_id, quantity) VALUES (?, 0)',
+        [c.id]
+      );
+    }
+
+    // Add sample stock (only if stock is 0 — first-time seed)
+    const sampleStock = { 'Red': 150, 'Brown': 120, 'Blue': 80 };
+    for (const [colorName, qty] of Object.entries(sampleStock)) {
+      if (colorMap[colorName]) {
+        const [current] = await connection.query(
+          'SELECT quantity FROM pd_eyeglass_stock WHERE color_id = ?', [colorMap[colorName]]
+        );
+        if (current.length > 0 && current[0].quantity === 0) {
+          await connection.query(
+            'UPDATE pd_eyeglass_stock SET quantity = ? WHERE color_id = ?',
+            [qty, colorMap[colorName]]
+          );
+          // Audit log for the seed stock
+          await connection.query(
+            'INSERT INTO pd_eyeglass_stock_log (color_id, quantity_added, performed_by, notes) VALUES (?, ?, ?, ?)',
+            [colorMap[colorName], qty, adminUserId, 'Initial seed stock']
+          );
+        }
+      }
+    }
+
     await connection.commit();
     console.log('Database seeded successfully!');
   } catch (error) {

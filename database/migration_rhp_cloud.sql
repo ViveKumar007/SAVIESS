@@ -1,9 +1,9 @@
 -- ============================================================================
 -- MIGRATION: RHP Registration Extended Fields + Application Documents
--- For TiDB Cloud (database: test)
+-- For local MySQL (database: saviess_vep) and TiDB Cloud
 -- ============================================================================
 
-USE test;
+USE saviess_vep;
 
 SET FOREIGN_KEY_CHECKS = 0;
 

@@ -16,6 +16,7 @@ const kpiController = require('../controllers/kpiController');
 const fieldReportController = require('../controllers/fieldReportController');
 const rhpRegistrationController = require('../controllers/rhpRegistrationController');
 const fieldManagerController = require('../controllers/fieldManagerController');
+const pdModuleController = require('../controllers/pdModuleController');
 
 // ----------------------------------------------------------------------------
 // 1. Auth Module
@@ -545,6 +546,127 @@ router.get(
   verifyToken,
   checkRole(['field_manager']),
   fieldManagerController.getRhpVisits
+);
+
+// ----------------------------------------------------------------------------
+// 13. PD Module — Visits, Eyeglass Inventory & Distribution
+// ----------------------------------------------------------------------------
+
+// Visit Management
+router.get(
+  '/pd/visits/export',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.exportVisits
+);
+router.get(
+  '/pd/visits',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.getFieldVisits
+);
+router.post(
+  '/pd/visits',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.createFieldVisit
+);
+router.put(
+  '/pd/visits/:id',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.updateFieldVisit
+);
+router.delete(
+  '/pd/visits/:id',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.deleteFieldVisit
+);
+
+// Eyeglass Colors
+router.get(
+  '/pd/eyeglass-colors',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.getColors
+);
+router.post(
+  '/pd/eyeglass-colors',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.addColor
+);
+
+// Eyeglass Inventory
+router.get(
+  '/pd/eyeglass-stock',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.getEyeglassStock
+);
+router.post(
+  '/pd/eyeglass-stock',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.addEyeglassStock
+);
+
+// Field Officer Allocations
+router.get(
+  '/pd/fo-list',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.getFieldOfficersList
+);
+router.get(
+  '/pd/fo-allocations',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.getFoAllocations
+);
+router.post(
+  '/pd/fo-allocations',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.allocateToFo
+);
+
+// Patient Distribution
+router.get(
+  '/pd/distributions',
+  verifyToken,
+  checkRole(['super_admin', 'program_director', 'field_officer']),
+  pdModuleController.getFoDistributions
+);
+router.post(
+  '/pd/distributions',
+  verifyToken,
+  checkRole(['super_admin', 'program_director', 'field_officer']),
+  upload.single('proof'),
+  pdModuleController.createDistribution
+);
+
+// Analytics
+router.get(
+  '/pd/analytics',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.getAnalyticsSummary
+);
+
+// Exports
+router.get(
+  '/pd/inventory/export',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.exportInventory
+);
+router.get(
+  '/pd/distributions/export',
+  verifyToken,
+  checkRole(['super_admin', 'program_director']),
+  pdModuleController.exportDistributions
 );
 
 module.exports = router;

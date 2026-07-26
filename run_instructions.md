@@ -1,23 +1,44 @@
 # Steps to Run the Vision Entrepreneur Platform
 
-Follow these steps to run the frontend and backend applications locally, using the same setup and commands that were validated on your system.
+## 🚀 One Command Setup (Recommended)
+
+Run **everything** — database, migrations, dependencies, seed data, and dev servers — with a single command:
+
+```powershell
+npm run setup
+```
+
+That's it! The app will be running at **http://localhost:5173**
+
+> If you've already done the first-time setup, just use `npm run dev` to start the servers.
+
+---
+
+Follow the steps below only if you prefer manual setup, or need to troubleshoot.
 
 ---
 
 ### Step 1: Set Up the MySQL Database (First Time Only)
-1. Open your terminal and start the MySQL monitor as the root user:
-   ```bash
-   mysql -u root
+
+> **⚠️ PowerShell Note:** PowerShell does not support `<` for input redirection. Always use `Get-Content file | mysql` instead.
+
+1. Run the database schema setup:
+   ```powershell
+   Get-Content database/schema.sql | mysql -u root
    ```
-2. Inside the MySQL prompt, load and run the database schema setup:
-   ```sql
-   source database/schema.sql
+2. Run the states migration to add multi-state support (all 36 Indian states/UTs):
+   ```powershell
+   Get-Content database/migration_add_states.sql | mysql -u root saviess_vep
    ```
-3. Run the states migration to add multi-state support (all 36 Indian states/UTs):
-   ```sql
-   source database/migration_add_states.sql
+3. Run any additional migrations as needed:
+   ```powershell
+   Get-Content database/migration_v2.sql | mysql -u root saviess_vep
+   Get-Content database/migration_fm_teams.sql | mysql -u root saviess_vep
+   Get-Content database/migration_pd_module.sql | mysql -u root saviess_vep
+   Get-Content database/migration_rhp_registration.sql | mysql -u root saviess_vep
+   Get-Content database/migration_rhp_cloud.sql | mysql -u root saviess_vep
    ```
-   *(This creates the `saviess_vep` database, defines all relational tables, and seeds all Indian states. Once complete, exit by typing `exit;` or `quit;`)*.
+   *(This creates the `saviess_vep` database, defines all relational tables, and seeds all Indian states. Run each migration only once.)*
 
 ---
 
@@ -78,16 +99,12 @@ Log in using any of the following credentials (password is **`Saviess@2026`** fo
 
 ---
 
-## Quick Reference (After First-Time Setup)
-
-Once you've completed the first-time setup (Steps 1–4), you only need **one command** to start everything:
-
-```bash
-npm run dev
-```
+## Quick Reference
 
 | Script | Description |
 |---|---|
+| `npm run setup` | **One command** — DB + migrations + deps + seed + start |
 | `npm run dev` | Start both backend + frontend together |
+| `npm run db:migrate` | Run all database migrations |
 | `npm run install:all` | Install dependencies for both apps |
 | `npm run seed` | Populate the database with mock data |
