@@ -48,22 +48,7 @@ const FODashboard = () => {
 
     // Setup Socket connection for real-time geolocation tracking
     socketRef.current = io(SOCKET_URL, {
-      auth: { token: `Bearer ${token}` },
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 2000
-    });
-
-    socketRef.current.on('connect', () => {
-      console.log('FO socket connected, id:', socketRef.current.id);
-      // If we were tracking before reconnect, re-register with server
-      if (isTracking) {
-        socketRef.current.emit('fo_start_tracking');
-      }
-    });
-
-    socketRef.current.on('connect_error', (err) => {
-      console.error('FO socket connection error:', err.message);
+      auth: { token: `Bearer ${token}` }
     });
 
     return () => {
@@ -143,26 +128,15 @@ const FODashboard = () => {
     socketRef.current.emit('fo_start_tracking');
 
     // 2. Start tracking loop: capture and emit coordinates every 60 seconds
-    const sendLocation = async (position) => {
+    const sendLocation = (position) => {
       const { latitude, longitude, accuracy } = position.coords;
       setCurrentCoords({ latitude, longitude });
-
-      // Read real device battery level via Battery Status API (with graceful fallback)
-      let batteryLevel = null;
-      try {
-        if (navigator.getBattery) {
-          const battery = await navigator.getBattery();
-          batteryLevel = Math.round(battery.level * 100);
-        }
-      } catch (e) {
-        // Battery API not supported or permission denied — send null
-      }
 
       socketRef.current.emit('fo_location_update', {
         latitude,
         longitude,
         accuracy,
-        batteryLevel
+        batteryLevel: 90 // Default mockup battery
       });
     };
 
@@ -269,7 +243,7 @@ const FODashboard = () => {
           </div>
           <div>
             <h1 className="text-base font-bold leading-tight">Field Officer Shift Logs</h1>
-            <p className="text-[10px] text-slate-400">SAVIESS Vision Entrepreneur Program</p>
+            <p className="text-[10px] text-slate-400">Bihar Vision Entrepreneur Program</p>
           </div>
         </div>
         <button

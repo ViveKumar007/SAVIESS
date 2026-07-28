@@ -28,11 +28,7 @@ const Login = () => {
       navigate('/rhp-dashboard');
     } else if (role === 'field_officer') {
       navigate('/fo-dashboard');
-    } else if (role === 'program_director') {
-      navigate('/pd-dashboard');
-    } else if (role === 'field_manager') {
-      navigate('/fm-dashboard');
-    } else if (role === 'super_admin') {
+    } else if (['super_admin', 'program_director', 'field_manager'].includes(role)) {
       navigate('/admin-dashboard');
     }
   };
@@ -150,21 +146,16 @@ const Login = () => {
           </button>
         </form>
 
-        {/* Divider */}
-        <div className="flex items-center my-5">
-          <div className="flex-1 border-t border-slate-700/50"></div>
-          <span className="px-3 text-xs text-slate-500 font-medium">OR</span>
-          <div className="flex-1 border-t border-slate-700/50"></div>
+        {/* Demo credentials hint for solution architect review */}
+        <div className="mt-8 pt-6 border-t border-slate-800 text-center">
+          <p className="text-slate-500 text-[11px] uppercase tracking-wider mb-2">Architect Quick Reference</p>
+          <div className="text-[11px] text-slate-400 space-y-1 bg-slate-800/40 p-3 rounded-lg border border-slate-800">
+            <div><span className="text-slate-300 font-medium">Admin:</span> admin@saviess.org</div>
+            <div><span className="text-slate-300 font-medium">Field Officer:</span> fo@saviess.org</div>
+            <div><span className="text-slate-300 font-medium">RHP Entrepreneur:</span> rhp@saviess.org</div>
+            <div className="text-[10px] text-teal-400/80 mt-1">Default Password: Saviess@2026</div>
+          </div>
         </div>
-
-        {/* Register as RHP */}
-        <button
-          onClick={() => navigate('/register-rhp')}
-          className="w-full py-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 font-semibold text-sm transition-all flex items-center justify-center space-x-2"
-        >
-          <span>Register as RHP</span>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-        </button>
 
       </div>
     </div>

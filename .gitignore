@@ -1,23 +1,22 @@
 # Dependencies
 node_modules/
-**/node_modules/
+backend/node_modules/
+frontend/node_modules/
 
-# Environment variables (NEVER commit secrets)
+# Environment variables (never commit real secrets)
 .env
 .env.local
-.env.*.local
+backend/.env
+frontend/.env
 
 # Build output
 frontend/dist/
-
-# OS files
-.DS_Store
-Thumbs.db
+frontend/build/
 
 # Logs
-*.log
 npm-debug.log*
+*.log
 
-# IDE
+# OS/editor
+.DS_Store
 .vscode/
-.idea/
