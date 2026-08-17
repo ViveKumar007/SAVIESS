@@ -26,7 +26,7 @@ async function testConnection() {
     connection.release();
   } catch (error) {
     console.error('Error connecting to the database on startup:', error.message);
-    process.exit(1); // Exit if DB connection fails to ensure production stability
+    console.warn('Server will remain running. The connection pool will automatically retry on incoming requests.');
   }
 }
 

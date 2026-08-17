@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { uploadStream } = require('../utils/uploadHandler');
+const { sendDbError } = require('../utils/errors');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 
@@ -131,6 +132,23 @@ const submitRegistration = async (req, res) => {
     // Normalize phone
     const normalizedPhone = data.phone ? data.phone.replace(/\D/g, '').slice(-10) : '';
 
+    // Reject a duplicate submission while a prior application from the same
+    // applicant is still pending/approved — a rejected one may be re-applied.
+    if (normalizedPhone || data.aadhaarNumber) {
+      const dupConds = [];
+      const dupParams = [];
+      if (normalizedPhone) { dupConds.push('phone = ?'); dupParams.push(normalizedPhone); }
+      if (data.aadhaarNumber) { dupConds.push('aadhaar_number = ?'); dupParams.push(data.aadhaarNumber); }
+      const [dupRows] = await connection.query(
+        `SELECT id FROM rhp_applications WHERE status != 'rejected' AND is_draft = 0 AND (${dupConds.join(' OR ')})`,
+        dupParams
+      );
+      if (dupRows.length > 0) {
+        await connection.rollback();
+        return res.status(409).json({ success: false, error: 'An application with this phone number or Aadhaar number is already under review or approved.' });
+      }
+    }
+
     const [result] = await connection.query(
       `INSERT INTO rhp_applications (
         application_code, full_name, first_name, last_name, gender, age, date_of_birth,
@@ -214,7 +232,7 @@ const submitRegistration = async (req, res) => {
         else if (file.fieldname === 'registrationCert') docType = 'registration_certificate';
         else if (file.fieldname === 'supportingDocs') docType = 'supporting';
 
-        const cloudResult = await uploadStream(file.buffer, 'rhp_applications');
+        const cloudResult = await uploadStream(file.buffer, 'rhp_applications', file.mimetype);
 
         await connection.query(
           `INSERT INTO rhp_application_documents
@@ -247,7 +265,7 @@ const submitRegistration = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('RHP Registration error:', error);
-    res.status(500).json({ success: false, error: 'Failed to process application: ' + error.message });
+    sendDbError(res, error, 'Failed to process application');
   } finally {
     connection.release();
   }
@@ -319,7 +337,7 @@ const getApplications = async (req, res) => {
     });
   } catch (error) {
     console.error('Get RHP applications error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -358,7 +376,7 @@ const getApplication = async (req, res) => {
     });
   } catch (error) {
     console.error('Get RHP application error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -431,7 +449,7 @@ const updateApplication = async (req, res) => {
     res.json({ success: true, message: 'Application updated successfully' });
   } catch (error) {
     console.error('Update RHP application error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -454,7 +472,7 @@ const deleteApplication = async (req, res) => {
     res.json({ success: true, message: 'Application deleted successfully' });
   } catch (error) {
     console.error('Delete RHP application error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -518,7 +536,7 @@ const updateStatus = async (req, res) => {
         const passwordHash = await bcrypt.hash(defaultPassword, salt);
 
         const [userResult] = await connection.query(
-          'INSERT INTO users (email, password_hash, first_name, last_name, role, phone) VALUES (?, ?, ?, ?, "rhp", ?)',
+          'INSERT INTO users (email, password_hash, first_name, last_name, role, phone, must_change_password) VALUES (?, ?, ?, ?, "rhp", ?, 1)',
           [email, passwordHash, fName, lName, phone]
         );
         userId = userResult.insertId;
@@ -558,7 +576,7 @@ const updateStatus = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Update RHP status error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   } finally {
     connection.release();
   }
@@ -680,7 +698,7 @@ const exportApplications = async (req, res) => {
     res.status(400).json({ success: false, error: 'Invalid format. Use xlsx, csv, or pdf.' });
   } catch (error) {
     console.error('Export RHP applications error:', error);
-    res.status(500).json({ success: false, error: 'Export failed: ' + error.message });
+    sendDbError(res, error, 'Export failed');
   }
 };
 

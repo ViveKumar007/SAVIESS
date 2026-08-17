@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendDbError } = require('../utils/errors');
 
 // ============================================================================
 // FIELD MANAGER MODULE — Teams, Live Tracking, RHP Visits
@@ -31,7 +32,7 @@ const getManagedFieldOfficers = async (req, res) => {
     res.json({ success: true, data: fos });
   } catch (error) {
     console.error('[FM] getManagedFieldOfficers error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -62,7 +63,7 @@ const createTeam = async (req, res) => {
       return res.status(400).json({ success: false, error: 'A team with this name already exists' });
     }
     console.error('[FM] createTeam error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -104,7 +105,7 @@ const getTeams = async (req, res) => {
     res.json({ success: true, data: teams });
   } catch (error) {
     console.error('[FM] getTeams error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -145,7 +146,7 @@ const updateTeam = async (req, res) => {
       return res.status(400).json({ success: false, error: 'A team with this name already exists' });
     }
     console.error('[FM] updateTeam error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -168,7 +169,7 @@ const deleteTeam = async (req, res) => {
     res.json({ success: true, message: 'Team deleted successfully' });
   } catch (error) {
     console.error('[FM] deleteTeam error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -225,7 +226,7 @@ const addTeamMembers = async (req, res) => {
     res.json({ success: true, message: `${added} member(s) added to team`, added });
   } catch (error) {
     console.error('[FM] addTeamMembers error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -257,7 +258,7 @@ const removeTeamMember = async (req, res) => {
     res.json({ success: true, message: 'Member removed from team' });
   } catch (error) {
     console.error('[FM] removeTeamMember error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -286,7 +287,7 @@ const getTeamLocations = async (req, res) => {
     res.json({ success: true, data: locations });
   } catch (error) {
     console.error('[FM] getTeamLocations error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -341,6 +342,7 @@ const getRhpVisits = async (req, res) => {
              ru.first_name as rhp_first, ru.last_name as rhp_last,
              d.name as rhp_district, bl.name as rhp_block,
              p.file_url as proof_image_url, p.file_name as proof_file_name, p.mime_type as proof_mime_type,
+             p.public_id as proof_public_id,
              v.created_at
       FROM fo_visits v
       JOIN field_officers fo ON v.fo_id = fo.id
@@ -366,7 +368,7 @@ const getRhpVisits = async (req, res) => {
     });
   } catch (error) {
     console.error('[FM] getRhpVisits error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 

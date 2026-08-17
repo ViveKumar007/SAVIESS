@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS rhp_application_documents (
     file_size_bytes INT UNSIGNED DEFAULT 0,
     mime_type VARCHAR(100) DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_app_docs_application FOREIGN KEY (application_id) REFERENCES rhp_applications (id) ON DELETE CASCADE ON UPDATE CASCADE,
     INDEX idx_app_docs_app_id (application_id),
     INDEX idx_app_docs_type (document_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

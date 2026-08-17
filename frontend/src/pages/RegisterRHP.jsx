@@ -248,10 +248,10 @@ const RegisterRHP = () => {
     setErrors(prev => ({ ...prev, [field]: undefined }));
   }, []);
 
-  // ── Validate current step ──
-  const validateStep = () => {
+  // ── Validate a given step (defaults to the current step) ──
+  const validateStep = (targetStep = step) => {
     const e = {};
-    if (step === 0) {
+    if (targetStep === 0) {
       if (!form.fullName.trim()) e.fullName = 'Full Name is required';
       if (!form.phone.trim()) e.phone = 'Mobile Number is required';
       else if (!MOBILE_RE.test(form.phone.replace(/\D/g, '').slice(-10))) e.phone = 'Must be 10 digits';
@@ -260,10 +260,11 @@ const RegisterRHP = () => {
       if (form.panNumber && !PAN_RE.test(form.panNumber.toUpperCase())) e.panNumber = 'Invalid PAN format';
       if (form.dateOfBirth && new Date(form.dateOfBirth) > new Date()) e.dateOfBirth = 'Cannot be in the future';
     }
-    if (step === 2) {
+    if (targetStep === 2) {
+      if (!form.state) e.state = 'State is required';
       if (form.pinCode && !PIN_RE.test(form.pinCode)) e.pinCode = 'Must be 6 digits';
     }
-    if (step === 7) {
+    if (targetStep === 7) {
       if (form.bankIfsc && !IFSC_RE.test(form.bankIfsc.toUpperCase())) e.bankIfsc = 'Invalid IFSC format';
     }
     setErrors(e);
@@ -308,11 +309,6 @@ const RegisterRHP = () => {
 
   // ── Submit ──
   const handleSubmit = async () => {
-    // Validate all steps
-    for (let s = 0; s < STEPS.length; s++) {
-      setStep(s);
-      // Validate minimal fields
-    }
     if (!form.fullName.trim() || !form.phone.trim()) {
       setStep(0);
       setGlobalError('Please fill in all required fields (Full Name, Mobile Number).');
@@ -709,7 +705,15 @@ const RegisterRHP = () => {
                 return (
                   <button
                     key={s.key}
-                    onClick={() => { if (i < step || validateStep()) setStep(i); }}
+                    onClick={() => {
+                      if (i <= step) { setStep(i); return; }
+                      // Jumping forward: every step between the start and the
+                      // target must validate, not just the current one.
+                      for (let s = 0; s < i; s++) {
+                        if (!validateStep(s)) { setStep(s); return; }
+                      }
+                      setStep(i);
+                    }}
                     className={`flex flex-col items-center min-w-[60px] transition-all ${
                       isActive ? 'text-teal-400' : isDone ? 'text-emerald-400' : 'text-slate-600'
                     }`}

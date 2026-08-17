@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const bcrypt = require('bcrypt');
 const { uploadStream } = require('../utils/uploadHandler');
+const { sendDbError } = require('../utils/errors');
 
 // ── Named constants (previously magic numbers) ──
 const STANDARD_READING_POWERS = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00];
@@ -34,7 +35,7 @@ const submitApplication = async (req, res) => {
     const uploadedDocs = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const cloudResult = await uploadStream(file.buffer, 'rhp_applications');
+        const cloudResult = await uploadStream(file.buffer, 'rhp_applications', file.mimetype);
         
         // Register in proof_uploads table
         // Use creatorId, default to a system placeholder user (id=1) if public applicant
@@ -78,7 +79,7 @@ const submitApplication = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Submit application error:', error);
-    res.status(500).json({ success: false, error: 'Failed to process application: ' + error.message });
+    sendDbError(res, error, 'Failed to process application');
   } finally {
     connection.release();
   }
@@ -131,7 +132,7 @@ const getApplications = async (req, res) => {
     res.json({ success: true, data: applications });
   } catch (error) {
     console.error('Get applications error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -151,12 +152,14 @@ const updateStatus = async (req, res) => {
     // Check application details
     const [apps] = await connection.query('SELECT * FROM rhp_applications WHERE id = ?', [id]);
     if (apps.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ success: false, error: 'Application not found' });
     }
     const app = apps[0];
 
     // Check if application is already approved
     if (app.status === 'approved' && status === 'approved') {
+      await connection.rollback();
       return res.status(400).json({ success: false, error: 'Application is already approved' });
     }
 
@@ -191,7 +194,7 @@ const updateStatus = async (req, res) => {
         const passwordHash = await bcrypt.hash(defaultPassword, salt);
 
         const [userResult] = await connection.query(
-          'INSERT INTO users (email, password_hash, first_name, last_name, role, phone) VALUES (?, ?, ?, ?, "rhp", ?)',
+          'INSERT INTO users (email, password_hash, first_name, last_name, role, phone, must_change_password) VALUES (?, ?, ?, ?, "rhp", ?, 1)',
           [email, passwordHash, app.first_name, app.last_name, app.phone]
         );
         userId = userResult.insertId;
@@ -234,7 +237,7 @@ const updateStatus = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Update application status error:', error);
-    res.status(500).json({ success: false, error: 'Database transaction failed: ' + error.message });
+    sendDbError(res, error, 'Database transaction failed');
   } finally {
     connection.release();
   }

@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { uploadStream } = require('../utils/uploadHandler');
+const { sendDbError } = require('../utils/errors');
 
 // Log a visit with photo upload and GPS coordinates
 const logVisit = async (req, res) => {
@@ -24,7 +25,7 @@ const logVisit = async (req, res) => {
 
     // Handle photo upload
     if (req.file) {
-      const cloudResult = await uploadStream(req.file.buffer, 'visits');
+      const cloudResult = await uploadStream(req.file.buffer, 'visits', req.file.mimetype);
 
       const [proofResult] = await connection.query(
         `INSERT INTO proof_uploads 
@@ -64,7 +65,7 @@ const logVisit = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Log visit error:', error);
-    res.status(500).json({ success: false, error: 'Database transaction failed: ' + error.message });
+    sendDbError(res, error, 'Database transaction failed');
   } finally {
     connection.release();
   }
@@ -124,7 +125,7 @@ const getVisits = async (req, res) => {
     res.json({ success: true, data: visits });
   } catch (error) {
     console.error('Get visits error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -174,7 +175,7 @@ const postLocation = async (req, res) => {
     res.json({ success: true, message: 'Location updated successfully via fallback endpoint' });
   } catch (error) {
     console.error('Post location fallback error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -191,7 +192,7 @@ const getAllLiveLocations = async (req, res) => {
     res.json({ success: true, data: locations });
   } catch (error) {
     console.error('Get all live locations error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -208,7 +209,7 @@ const stopTracking = async (req, res) => {
     res.json({ success: true, message: 'Live tracking stopped. Account marked offline' });
   } catch (error) {
     console.error('Stop tracking error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 

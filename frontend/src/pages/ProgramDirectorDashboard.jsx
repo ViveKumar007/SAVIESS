@@ -30,6 +30,7 @@ const ProgramDirectorDashboard = () => {
   const [editingPartner, setEditingPartner] = useState(null);
   const [partnerForm, setPartnerForm] = useState({ name: '', type: 'ngo', contactPerson: '', phone: '', email: '', districtId: '', notes: '' });
   const [partnerError, setPartnerError] = useState('');
+  const [partnerSubmitting, setPartnerSubmitting] = useState(false);
 
   // KPI state
   const [kpiActuals, setKpiActuals] = useState([]);
@@ -54,6 +55,7 @@ const ProgramDirectorDashboard = () => {
   const [editingVisit, setEditingVisit] = useState(null);
   const [visitForm, setVisitForm] = useState({ visitDate: '', place: '', keyObservations: '', areasForImprovement: '', remarks: '' });
   const [visitFormError, setVisitFormError] = useState('');
+  const [visitSubmitting, setVisitSubmitting] = useState(false);
 
   // ── PD Module: Eyeglass Inventory ──
   const [eyeglassColors, setEyeglassColors] = useState([]);
@@ -64,6 +66,8 @@ const ProgramDirectorDashboard = () => {
   const [showColorForm, setShowColorForm] = useState(false);
   const [colorForm, setColorForm] = useState({ name: '', hexCode: '#000000', emoji: '' });
   const [stockMsg, setStockMsg] = useState('');
+  const [stockSubmitting, setStockSubmitting] = useState(false);
+  const [colorSubmitting, setColorSubmitting] = useState(false);
 
   // ── PD Module: FO Allocations ──
   const [foList, setFoList] = useState([]);
@@ -73,6 +77,7 @@ const ProgramDirectorDashboard = () => {
   const [showAllocForm, setShowAllocForm] = useState(false);
   const [allocForm, setAllocForm] = useState({ foId: '', colorId: '', quantity: '', notes: '' });
   const [allocMsg, setAllocMsg] = useState('');
+  const [allocSubmitting, setAllocSubmitting] = useState(false);
 
   // ── PD Module: Distribution ──
   const [distributions, setDistributions] = useState([]);
@@ -225,6 +230,7 @@ const ProgramDirectorDashboard = () => {
   const handlePartnerSubmit = async (e) => {
     e.preventDefault();
     setPartnerError('');
+    setPartnerSubmitting(true);
     try {
       if (editingPartner) {
         await axios.put(`${API}/partners/${editingPartner.id}`, partnerForm, { headers });
@@ -238,6 +244,7 @@ const ProgramDirectorDashboard = () => {
     } catch (err) {
       setPartnerError(err.response?.data?.error || 'Failed to save partner');
     }
+    setPartnerSubmitting(false);
   };
 
   const handleDeletePartner = async (id) => {
@@ -270,6 +277,7 @@ const ProgramDirectorDashboard = () => {
   const handleVisitSubmit = async (e) => {
     e.preventDefault();
     setVisitFormError('');
+    setVisitSubmitting(true);
     try {
       if (editingVisit) {
         await axios.put(`${API}/pd/visits/${editingVisit.id}`, visitForm, { headers });
@@ -283,6 +291,7 @@ const ProgramDirectorDashboard = () => {
     } catch (err) {
       setVisitFormError(err.response?.data?.error || 'Failed to save visit');
     }
+    setVisitSubmitting(false);
   };
   const handleEditVisit = (v) => {
     setEditingVisit(v);
@@ -300,6 +309,7 @@ const ProgramDirectorDashboard = () => {
   // ── Stock Add ──
   const handleStockSubmit = async (e) => {
     e.preventDefault();
+    setStockSubmitting(true);
     try {
       await axios.post(`${API}/pd/eyeglass-stock`, stockForm, { headers });
       setStockMsg('Stock added!');
@@ -310,9 +320,11 @@ const ProgramDirectorDashboard = () => {
     } catch (err) {
       setStockMsg(err.response?.data?.error || 'Failed to add stock');
     }
+    setStockSubmitting(false);
   };
   const handleColorSubmit = async (e) => {
     e.preventDefault();
+    setColorSubmitting(true);
     try {
       await axios.post(`${API}/pd/eyeglass-colors`, colorForm, { headers });
       setShowColorForm(false);
@@ -322,11 +334,13 @@ const ProgramDirectorDashboard = () => {
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to add color');
     }
+    setColorSubmitting(false);
   };
 
   // ── Allocation Submit ──
   const handleAllocSubmit = async (e) => {
     e.preventDefault();
+    setAllocSubmitting(true);
     try {
       await axios.post(`${API}/pd/fo-allocations`, allocForm, { headers });
       setAllocMsg('Allocated successfully!');
@@ -338,6 +352,7 @@ const ProgramDirectorDashboard = () => {
     } catch (err) {
       setAllocMsg(err.response?.data?.error || 'Allocation failed');
     }
+    setAllocSubmitting(false);
   };
 
   // ── Distribution Submit ──
@@ -365,10 +380,21 @@ const ProgramDirectorDashboard = () => {
     setDistSubmitting(false);
   };
 
+  // Proof photos are stored with authenticated (non-public) Cloudinary delivery —
+  // fetch a short-lived signed URL rather than linking the raw stored URL directly.
+  const viewProof = async (publicId) => {
+    if (!publicId) { alert('No proof file available.'); return; }
+    try {
+      const res = await axios.get(`${API}/uploads/signed-url`, { headers, params: { publicId } });
+      if (res.data.success) window.open(res.data.url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.error('View proof error:', err);
+      alert('Unable to load this file right now.');
+    }
+  };
+
   // ── Export helpers ──
   const handleExport = (endpoint, filename) => {
-    window.open(`${API}/${endpoint}?token=${token}`, '_blank');
-    // Fallback: use axios for download
     axios.get(`${API}/${endpoint}`, { headers, responseType: 'blob' })
       .then(res => {
         const url = window.URL.createObjectURL(new Blob([res.data]));
@@ -780,7 +806,7 @@ const ProgramDirectorDashboard = () => {
                     <textarea value={partnerForm.notes} onChange={e => setPartnerForm(p => ({ ...p, notes: e.target.value }))} rows={2} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-indigo-500 text-sm resize-none" placeholder="Partnership details..." />
                   </div>
                   <div className="md:col-span-2">
-                    <button type="submit" className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-sm rounded-xl transition-all shadow-md">
+                    <button type="submit" disabled={partnerSubmitting} className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all shadow-md">
                       {editingPartner ? 'Update Partner' : 'Create Partner'}
                     </button>
                   </div>
@@ -999,7 +1025,7 @@ const ProgramDirectorDashboard = () => {
                     <input value={visitForm.remarks} onChange={e => setVisitForm(f => ({ ...f, remarks: e.target.value }))} className="w-full px-4 py-3 border rounded-xl bg-slate-50 focus:outline-none focus:border-indigo-500 text-sm" placeholder="Additional remarks" />
                   </div>
                   <div className="md:col-span-2">
-                    <button type="submit" className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-sm rounded-xl transition-all shadow-md">{editingVisit ? 'Update Visit' : 'Save Visit'}</button>
+                    <button type="submit" disabled={visitSubmitting} className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all shadow-md">{editingVisit ? 'Update Visit' : 'Save Visit'}</button>
                   </div>
                 </form>
               </div>
@@ -1106,7 +1132,7 @@ const ProgramDirectorDashboard = () => {
                     <input value={stockForm.notes} onChange={e => setStockForm(f => ({ ...f, notes: e.target.value }))} className="w-full px-3 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-indigo-500 text-sm" placeholder="Batch/supplier info" />
                   </div>
                 </div>
-                <button type="submit" className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-sm rounded-xl shadow-md transition-all">Add Stock</button>
+                <button type="submit" disabled={stockSubmitting} className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white font-bold text-sm rounded-xl shadow-md transition-all">Add Stock</button>
               </form>
             )}
 
@@ -1131,7 +1157,7 @@ const ProgramDirectorDashboard = () => {
                     <input value={colorForm.emoji} onChange={e => setColorForm(f => ({ ...f, emoji: e.target.value }))} className="w-full px-3 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-indigo-500 text-sm" placeholder="🟢" />
                   </div>
                 </div>
-                <button type="submit" className="px-6 py-2.5 bg-violet-500 hover:bg-violet-600 text-white font-bold text-sm rounded-xl shadow-md transition-all">Add Color</button>
+                <button type="submit" disabled={colorSubmitting} className="px-6 py-2.5 bg-violet-500 hover:bg-violet-600 disabled:opacity-50 text-white font-bold text-sm rounded-xl shadow-md transition-all">Add Color</button>
               </form>
             )}
 
@@ -1240,7 +1266,7 @@ const ProgramDirectorDashboard = () => {
                     <input value={allocForm.notes} onChange={e => setAllocForm(f => ({ ...f, notes: e.target.value }))} className="w-full px-3 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-indigo-500 text-sm" placeholder="Reason" />
                   </div>
                 </div>
-                <button type="submit" className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-sm rounded-xl shadow-md transition-all">Allocate</button>
+                <button type="submit" disabled={allocSubmitting} className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white font-bold text-sm rounded-xl shadow-md transition-all">Allocate</button>
               </form>
             )}
 
@@ -1434,9 +1460,9 @@ const ProgramDirectorDashboard = () => {
                             <td className="td-cell">{d.patient_name || '—'}</td>
                             <td className="td-cell">
                               {d.proof_url ? (
-                                <a href={d.proof_url} target="_blank" rel="noopener noreferrer" className="flex items-center space-x-1 text-indigo-500 hover:text-indigo-700 transition-colors">
+                                <button onClick={() => viewProof(d.proof_public_id)} className="flex items-center space-x-1 text-indigo-500 hover:text-indigo-700 transition-colors">
                                   <Image className="w-4 h-4" /><span className="text-xs font-semibold">View</span><ExternalLink className="w-3 h-3" />
-                                </a>
+                                </button>
                               ) : '—'}
                             </td>
                           </tr>
@@ -1566,7 +1592,7 @@ const ProgramDirectorDashboard = () => {
                               <td className="td-cell"><span className="flex items-center space-x-1"><span>{d.emoji}</span><span>{d.color_name}</span></span></td>
                               <td className="td-cell font-bold text-indigo-700">{d.quantity}</td>
                               <td className="td-cell">{d.patient_name || '—'}</td>
-                              <td className="td-cell">{d.proof_url ? <a href={d.proof_url} target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:text-indigo-700"><ExternalLink className="w-4 h-4" /></a> : '—'}</td>
+                              <td className="td-cell">{d.proof_url ? <button onClick={() => viewProof(d.proof_public_id)} className="text-indigo-500 hover:text-indigo-700"><ExternalLink className="w-4 h-4" /></button> : '—'}</td>
                             </tr>
                           ))}
                         </tbody>

@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendDbError } = require('../utils/errors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
@@ -96,7 +97,7 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -168,6 +169,7 @@ const login = async (req, res) => {
     res.json({
       success: true,
       accessToken,
+      requiresPasswordChange: !!user.must_change_password,
       user: {
         id: user.id,
         email: user.email,
@@ -182,7 +184,45 @@ const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
+  }
+};
+
+// Refresh — exchange the httpOnly refresh-token cookie for a new access token
+const refresh = async (req, res) => {
+  const token = req.cookies?.refreshToken;
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Refresh token is required' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+
+    const [users] = await db.query('SELECT * FROM users WHERE id = ?', [decoded.userId]);
+    if (users.length === 0 || !users[0].is_active) {
+      return res.status(401).json({ success: false, error: 'Invalid refresh token' });
+    }
+    const user = users[0];
+
+    let profileId = null;
+    let districtId = null;
+    let blockId = null;
+    if (user.role === 'rhp') {
+      const [rhpProfile] = await db.query('SELECT id, district_id, block_id FROM rhps WHERE user_id = ?', [user.id]);
+      if (rhpProfile.length > 0) {
+        profileId = rhpProfile[0].id; districtId = rhpProfile[0].district_id; blockId = rhpProfile[0].block_id;
+      }
+    } else if (user.role === 'field_officer') {
+      const [foProfile] = await db.query('SELECT id, district_id, block_id FROM field_officers WHERE user_id = ?', [user.id]);
+      if (foProfile.length > 0) {
+        profileId = foProfile[0].id; districtId = foProfile[0].district_id; blockId = foProfile[0].block_id;
+      }
+    }
+
+    const accessToken = generateAccessToken({ ...user, profileId, districtId, blockId });
+    res.json({ success: true, accessToken });
+  } catch (error) {
+    return res.status(401).json({ success: false, error: 'Invalid or expired refresh token' });
   }
 };
 
@@ -218,7 +258,7 @@ const getProfile = async (req, res) => {
     });
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -248,12 +288,12 @@ const changePassword = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const newHash = await bcrypt.hash(newPassword, salt);
 
-    await db.query('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, req.user.userId]);
+    await db.query('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [newHash, req.user.userId]);
 
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (error) {
     console.error('Change password error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -273,6 +313,20 @@ const provisionUser = async (req, res) => {
 
   if (!['field_officer', 'field_manager', 'program_director', 'rhp'].includes(role)) {
     return res.status(400).json({ success: false, error: 'Role must be field_officer, field_manager, program_director, or rhp' });
+  }
+
+  // Role-hierarchy check: a caller may only ever provision roles below their own level.
+  // super_admin -> any role. program_director -> field_officer/field_manager/rhp.
+  // field_manager -> field_officer/rhp only. Mirrors the equivalent (unreachable) check
+  // already written in register() above.
+  const callerRole = req.user.role;
+  const provisionableRoles = {
+    super_admin: ['field_officer', 'field_manager', 'program_director', 'rhp'],
+    program_director: ['field_officer', 'field_manager', 'rhp'],
+    field_manager: ['field_officer', 'rhp']
+  };
+  if (!provisionableRoles[callerRole] || !provisionableRoles[callerRole].includes(role)) {
+    return res.status(403).json({ success: false, error: `Forbidden: your role (${callerRole}) cannot provision a ${role} account` });
   }
 
   // For field_officer, field_manager, program_director: resolve text-based location to IDs if numeric IDs not provided
@@ -341,9 +395,9 @@ const provisionUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(defaultPassword, salt);
 
-    // 1. Create user record
+    // 1. Create user record — auto-generated password, so force a change on first login
     const [userResult] = await connection.query(
-      'INSERT INTO users (email, password_hash, first_name, last_name, role, phone) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO users (email, password_hash, first_name, last_name, role, phone, must_change_password) VALUES (?, ?, ?, ?, ?, ?, 1)',
       [generatedEmail, passwordHash, firstName, lastName, role, phone]
     );
     const userId = userResult.insertId;
@@ -360,9 +414,29 @@ const provisionUser = async (req, res) => {
       );
       profileData = { profileId: foResult.insertId, type: 'field_officer' };
 
+    } else if (role === 'field_manager') {
+      // Sequential employee code, same "read last, increment" convention as
+      // generateAppCode() in rhpRegistrationController.js
+      const [codeRows] = await connection.query(
+        'SELECT employee_code FROM field_managers ORDER BY id DESC LIMIT 1'
+      );
+      let nextSeq = 1;
+      if (codeRows.length > 0) {
+        const lastSeq = parseInt(codeRows[0].employee_code.split('-')[1], 10);
+        nextSeq = (Number.isNaN(lastSeq) ? 0 : lastSeq) + 1;
+      }
+      const employeeCode = `FM-${nextSeq.toString().padStart(5, '0')}`;
+
+      const [fmResult] = await connection.query(
+        `INSERT INTO field_managers (user_id, employee_code, district_id, block_id, coverage_area, availability_status)
+         VALUES (?, ?, ?, ?, ?, 'active')`,
+        [userId, employeeCode, parseInt(districtId), parseInt(blockId), coverageArea || '']
+      );
+      profileData = { profileId: fmResult.insertId, type: 'field_manager', employeeCode };
+
     } else if (role === 'rhp') {
       const [rhpResult] = await connection.query(
-        `INSERT INTO rhps (user_id, center_name, district_id, block_id, village, status) 
+        `INSERT INTO rhps (user_id, center_name, district_id, block_id, village, status)
          VALUES (?, ?, ?, ?, ?, 'active')`,
         [userId, centerName, parseInt(districtId), parseInt(blockId), village]
       );
@@ -403,7 +477,7 @@ const provisionUser = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Provision user error:', error);
-    res.status(500).json({ success: false, error: 'Transaction failed: ' + error.message });
+    sendDbError(res, error, 'Transaction failed');
   } finally {
     connection.release();
   }
@@ -412,6 +486,7 @@ const provisionUser = async (req, res) => {
 module.exports = {
   register,
   login,
+  refresh,
   getProfile,
   changePassword,
   provisionUser

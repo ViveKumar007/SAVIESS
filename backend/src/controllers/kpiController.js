@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendDbError } = require('../utils/errors');
 
 // ============================================================================
 // KPI TRACKING — Targets & Actuals for Program Director
@@ -32,7 +33,7 @@ const getTargets = async (req, res) => {
     res.json({ success: true, data: targets });
   } catch (error) {
     console.error('Get KPI targets error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -67,7 +68,7 @@ const setTargets = async (req, res) => {
     res.json({ success: true, message: 'KPI targets saved successfully' });
   } catch (error) {
     console.error('Set KPI targets error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -153,7 +154,7 @@ const getActuals = async (req, res) => {
     res.json({ success: true, month: monthStart, data: result });
   } catch (error) {
     console.error('Get KPI actuals error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 

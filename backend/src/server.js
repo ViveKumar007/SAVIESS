@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 const http = require('http');
 const socketIo = require('socket.io');
 const jwt = require('jsonwebtoken');
@@ -12,19 +14,28 @@ const { processLocationTracking } = require('./controllers/visitController');
 const app = express();
 const server = http.createServer(app);
 
-// Startup validation for critical environment variables
+// Startup validation for critical environment variables. CORS fails closed
+// (no wildcard fallback) rather than open, so a missing CLIENT_URL is caught
+// here the same way a missing JWT secret already is.
 if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
   console.error('CRITICAL: JWT_SECRET and JWT_REFRESH_SECRET must be set in environment variables.');
   process.exit(1);
 }
+if (!process.env.CLIENT_URL) {
+  console.error('CRITICAL: CLIENT_URL must be set in environment variables (used for CORS — no wildcard fallback).');
+  process.exit(1);
+}
 
-// Configure CORS to allow communication from local react client
+app.use(helmet());
+
+// Configure CORS to allow communication from the configured client origin only
 app.use(cors({
-  origin: process.env.CLIENT_URL || '*',
+  origin: process.env.CLIENT_URL,
   credentials: true
 }));
 
 app.use(express.json());
+app.use(cookieParser());
 
 // Bind REST routes
 app.use('/api/v1', apiRoutes);
@@ -37,13 +48,14 @@ app.get('/health', (req, res) => {
 // Configure Socket.io
 const io = socketIo(server, {
   cors: {
-    origin: process.env.CLIENT_URL || '*',
-    methods: ['GET', 'POST']
+    origin: process.env.CLIENT_URL,
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
 // Socket JWT authentication middleware
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth.token || socket.handshake.headers['authorization'];
   if (!token) {
     return next(new Error('Authentication token required'));
@@ -52,6 +64,13 @@ io.use((socket, next) => {
   const tokenStr = token.startsWith('Bearer ') ? token.split(' ')[1] : token;
   try {
     const decoded = jwt.verify(tokenStr, process.env.JWT_SECRET);
+
+    // Reject a deactivated account at connect time, same as the REST verifyToken check.
+    const [rows] = await db.query('SELECT is_active FROM users WHERE id = ?', [decoded.userId]);
+    if (rows.length === 0 || !rows[0].is_active) {
+      return next(new Error('Account is deactivated or no longer exists'));
+    }
+
     socket.user = decoded;
     next();
   } catch (error) {

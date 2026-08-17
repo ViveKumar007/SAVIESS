@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { uploadStream } = require('../utils/uploadHandler');
+const { sendDbError } = require('../utils/errors');
 const XLSX = require('xlsx');
 
 // ============================================================================
@@ -44,7 +45,7 @@ const getFieldVisits = async (req, res) => {
     res.json({ success: true, data: visits, total, page: parseInt(page), limit: parseInt(limit) });
   } catch (error) {
     console.error('Get field visits error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -63,7 +64,7 @@ const createFieldVisit = async (req, res) => {
     res.status(201).json({ success: true, message: 'Field visit recorded', visitId: result.insertId });
   } catch (error) {
     console.error('Create field visit error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -84,7 +85,7 @@ const updateFieldVisit = async (req, res) => {
     res.json({ success: true, message: 'Field visit updated' });
   } catch (error) {
     console.error('Update field visit error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -99,7 +100,7 @@ const deleteFieldVisit = async (req, res) => {
     res.json({ success: true, message: 'Field visit deleted' });
   } catch (error) {
     console.error('Delete field visit error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -132,7 +133,7 @@ const exportVisits = async (req, res) => {
     res.send(buf);
   } catch (error) {
     console.error('Export visits error:', error);
-    res.status(500).json({ success: false, error: 'Export failed: ' + error.message });
+    sendDbError(res, error, 'Export failed');
   }
 };
 
@@ -147,7 +148,7 @@ const getColors = async (req, res) => {
     res.json({ success: true, data: colors });
   } catch (error) {
     console.error('Get colors error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -171,7 +172,7 @@ const addColor = async (req, res) => {
     res.status(201).json({ success: true, message: 'Color added', colorId: result.insertId });
   } catch (error) {
     console.error('Add color error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -203,14 +204,14 @@ const getEyeglassStock = async (req, res) => {
     res.json({ success: true, data: { stock, log } });
   } catch (error) {
     console.error('Get eyeglass stock error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
 // Add stock for a color
 const addEyeglassStock = async (req, res) => {
   const { colorId, quantity, notes } = req.body;
-  if (!colorId || !quantity || parseInt(quantity) <= 0) {
+  if (!colorId || !quantity || Number.isNaN(parseInt(quantity)) || parseInt(quantity) <= 0) {
     return res.status(400).json({ success: false, error: 'Color and a positive quantity are required' });
   }
   const connection = await db.getConnection();
@@ -237,7 +238,7 @@ const addEyeglassStock = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Add eyeglass stock error:', error);
-    res.status(500).json({ success: false, error: 'Stock update failed: ' + error.message });
+    sendDbError(res, error, 'Stock update failed');
   } finally {
     connection.release();
   }
@@ -264,13 +265,23 @@ const getFieldOfficersList = async (req, res) => {
     res.json({ success: true, data: fos });
   } catch (error) {
     console.error('Get field officers list error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
 // Get per-FO allocation breakdown by color
 const getFoAllocations = async (req, res) => {
-  const { foId } = req.query;
+  let { foId } = req.query;
+
+  // Field Officers may only ever see their own allocation, never another FO's
+  if (req.user.role === 'field_officer') {
+    const [fos] = await db.query('SELECT id FROM field_officers WHERE user_id = ?', [req.user.userId]);
+    if (fos.length === 0) {
+      return res.status(403).json({ success: false, error: 'Only registered Field Officers can view their allocation' });
+    }
+    foId = fos[0].id;
+  }
+
   try {
     let query = `
       SELECT a.id, a.fo_id, a.color_id, a.quantity, a.updated_at,
@@ -313,14 +324,14 @@ const getFoAllocations = async (req, res) => {
     res.json({ success: true, data: { allocations, log } });
   } catch (error) {
     console.error('Get FO allocations error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
 // Allocate eyeglasses from central stock to a Field Officer
 const allocateToFo = async (req, res) => {
   const { foId, colorId, quantity, notes } = req.body;
-  if (!foId || !colorId || !quantity || parseInt(quantity) <= 0) {
+  if (!foId || !colorId || !quantity || Number.isNaN(parseInt(quantity)) || parseInt(quantity) <= 0) {
     return res.status(400).json({ success: false, error: 'Field Officer, color, and a positive quantity are required' });
   }
 
@@ -374,7 +385,7 @@ const allocateToFo = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Allocate to FO error:', error);
-    res.status(500).json({ success: false, error: 'Allocation failed: ' + error.message });
+    sendDbError(res, error, 'Allocation failed');
   } finally {
     connection.release();
   }
@@ -386,8 +397,18 @@ const allocateToFo = async (req, res) => {
 
 // Get distribution records
 const getFoDistributions = async (req, res) => {
-  const { foId, colorId, startDate, endDate, page = 1, limit = 20 } = req.query;
+  let { foId, colorId, startDate, endDate, page = 1, limit = 20 } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  // Field Officers may only ever see their own distribution history, never another FO's
+  if (req.user.role === 'field_officer') {
+    const [fos] = await db.query('SELECT id FROM field_officers WHERE user_id = ?', [req.user.userId]);
+    if (fos.length === 0) {
+      return res.status(403).json({ success: false, error: 'Only registered Field Officers can view their distributions' });
+    }
+    foId = fos[0].id;
+  }
+
   try {
     let query = `
       SELECT d.*, c.name AS color_name, c.hex_code, c.emoji,
@@ -418,15 +439,26 @@ const getFoDistributions = async (req, res) => {
     res.json({ success: true, data: distributions, total, page: parseInt(page), limit: parseInt(limit) });
   } catch (error) {
     console.error('Get distributions error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
 // Create a distribution record with mandatory proof upload
 const createDistribution = async (req, res) => {
-  const { foId, colorId, quantity, patientName, patientPhone, patientDetails, distributionDate, notes } = req.body;
+  let { foId } = req.body;
+  const { colorId, quantity, patientName, patientPhone, patientDetails, distributionDate, notes } = req.body;
 
-  if (!foId || !colorId || !quantity || parseInt(quantity) <= 0 || !distributionDate) {
+  // Field Officers can only ever distribute from their own inventory — never
+  // trust a client-supplied foId for this role, always derive it server-side.
+  if (req.user.role === 'field_officer') {
+    const [fos] = await db.query('SELECT id FROM field_officers WHERE user_id = ?', [req.user.userId]);
+    if (fos.length === 0) {
+      return res.status(403).json({ success: false, error: 'Only registered Field Officers can distribute eyeglasses' });
+    }
+    foId = fos[0].id;
+  }
+
+  if (!foId || !colorId || !quantity || Number.isNaN(parseInt(quantity)) || parseInt(quantity) <= 0 || !distributionDate) {
     return res.status(400).json({ success: false, error: 'Field Officer, color, quantity, and distribution date are required' });
   }
 
@@ -450,7 +482,7 @@ const createDistribution = async (req, res) => {
     }
 
     // Upload proof to Cloudinary
-    const cloudResult = await uploadStream(req.file.buffer, 'saviess_pd_distribution_proofs');
+    const cloudResult = await uploadStream(req.file.buffer, 'saviess_pd_distribution_proofs', req.file.mimetype);
 
     // Deduct from FO allocation
     await connection.query(
@@ -476,7 +508,7 @@ const createDistribution = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Create distribution error:', error);
-    res.status(500).json({ success: false, error: 'Distribution failed: ' + error.message });
+    sendDbError(res, error, 'Distribution failed');
   } finally {
     connection.release();
   }
@@ -540,7 +572,7 @@ const getAnalyticsSummary = async (req, res) => {
 
     // Recent 10 distributions
     const [recentDist] = await db.query(`
-      SELECT d.quantity, d.patient_name, d.distribution_date, d.proof_url,
+      SELECT d.quantity, d.patient_name, d.distribution_date, d.proof_url, d.proof_public_id,
              c.name AS color_name, c.emoji,
              u.first_name AS fo_first, u.last_name AS fo_last
       FROM pd_fo_distribution d
@@ -576,7 +608,7 @@ const getAnalyticsSummary = async (req, res) => {
     });
   } catch (error) {
     console.error('Get analytics summary error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -604,7 +636,7 @@ const exportInventory = async (req, res) => {
     res.send(buf);
   } catch (error) {
     console.error('Export inventory error:', error);
-    res.status(500).json({ success: false, error: 'Export failed: ' + error.message });
+    sendDbError(res, error, 'Export failed');
   }
 };
 
@@ -629,7 +661,7 @@ const exportDistributions = async (req, res) => {
     res.send(buf);
   } catch (error) {
     console.error('Export distributions error:', error);
-    res.status(500).json({ success: false, error: 'Export failed: ' + error.message });
+    sendDbError(res, error, 'Export failed');
   }
 };
 

@@ -15,17 +15,9 @@ const RHPDashboard = () => {
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Dropdown lists
-  const districts = [
-    { id: 1, name: 'Patna' },
-    { id: 2, name: 'Nalanda' },
-    { id: 3, name: 'Gaya' }
-  ];
-  const blocks = [
-    { id: 1, districtId: 1, name: 'Patna Sadar' },
-    { id: 2, districtId: 2, name: 'Harnaut' },
-    { id: 3, districtId: 3, name: 'Sherghati' }
-  ];
+  // Dropdown lists — loaded from the real districts/blocks API, not hardcoded
+  const [districts, setDistricts] = useState([]);
+  const [blocks, setBlocks] = useState([]);
 
   // Form States: Patient Registration
   const [patFirst, setPatFirst] = useState('');
@@ -33,8 +25,8 @@ const RHPDashboard = () => {
   const [patGender, setPatGender] = useState('male');
   const [patAge, setPatAge] = useState('');
   const [patPhone, setPatPhone] = useState('');
-  const [patDistrict, setPatDistrict] = useState('1');
-  const [patBlock, setPatBlock] = useState('1');
+  const [patDistrict, setPatDistrict] = useState('');
+  const [patBlock, setPatBlock] = useState('');
   const [patVillage, setPatVillage] = useState('');
 
   // Form States: Refraction Screening
@@ -78,12 +70,36 @@ const RHPDashboard = () => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   useEffect(() => {
+    fetchDistricts();
     if (user.profileId) {
       fetchInventory();
       fetchPatients();
       fetchIndents();
     }
   }, [user.profileId]);
+
+  // Fetch blocks when district changes
+  useEffect(() => {
+    if (!patDistrict) { setBlocks([]); return; }
+    const loadBlocks = async () => {
+      try {
+        const res = await axios.get(`${API}/blocks?districtId=${patDistrict}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data.success) setBlocks(res.data.data);
+      } catch (err) { console.error('Load blocks error:', err); }
+    };
+    loadBlocks();
+  }, [patDistrict]);
+
+  const fetchDistricts = async () => {
+    try {
+      const res = await axios.get(`${API}/districts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) setDistricts(res.data.data);
+    } catch (err) { console.error('Load districts error:', err); }
+  };
 
   const fetchInventory = async () => {
     try {
@@ -100,15 +116,12 @@ const RHPDashboard = () => {
 
   const fetchPatients = async () => {
     try {
-      // Use standard axios call
-      const res = await axios.get(`${API}/visits`, {
+      const res = await axios.get(`${API}/patients`, {
         headers: { Authorization: `Bearer ${token}` }
-      }); // Fallback check or get patients
-      // For standalone demo completeness, let's load clinical data. We mock patients list if database call is not supported
-      setPatients([
-        { id: 1, first_name: 'Manoj', last_name: 'Paswan', age: 48, phone: '+919900112233', village: 'Harnaut' },
-        { id: 2, first_name: 'Sita', last_name: 'Devi', age: 55, phone: '+919900112244', village: 'Harnaut' }
-      ]);
+      });
+      if (res.data.success) {
+        setPatients(res.data.data);
+      }
     } catch (err) {
       console.error('Fetch patients error:', err);
     }
@@ -149,9 +162,9 @@ const RHPDashboard = () => {
 
       if (res.data.success) {
         setSuccessMsg(`Patient ${patFirst} ${patLast} registered successfully!`);
-        // Refresh local list
-        setPatients(prev => [...prev, { id: res.data.data.id, first_name: patFirst, last_name: patLast, age: patAge, phone: patPhone, village: patVillage }]);
-        // Reset form
+        // Refresh from the server so the real record (with district/block names) is reflected
+        fetchPatients();
+        // Reset form (district/block left as-is — RHPs typically register several patients from the same village in one sitting)
         setPatFirst('');
         setPatLast('');
         setPatPhone('');
@@ -286,9 +299,26 @@ const RHPDashboard = () => {
     }
   };
 
-  const handleDownloadInvoice = () => {
+  const handleDownloadInvoice = async () => {
     if (!dispensedInvoice) return;
-    window.open(`${API}/dispensings/${dispensedInvoice.dispensingId}/pdf?authorization=Bearer ${token}`, '_blank');
+    try {
+      const res = await axios.get(
+        `${API}/dispensings/${dispensedInvoice.dispensingId}/pdf`,
+        { headers: { Authorization: `Bearer ${token}` }, responseType: 'blob' }
+      );
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `receipt_${dispensedInvoice.invoiceNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF download error:', err);
+      setErrorMsg('Failed to download PDF receipt.');
+    }
   };
 
   const handleProofChange = (e) => {
@@ -420,6 +450,21 @@ const RHPDashboard = () => {
                   type="tel" placeholder="Phone Number (Optional)" value={patPhone} onChange={(e) => setPatPhone(e.target.value)}
                   className="w-full px-4 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm"
                 />
+                <select
+                  required value={patDistrict} onChange={(e) => { setPatDistrict(e.target.value); setPatBlock(''); }}
+                  className="w-full px-4 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm"
+                >
+                  <option value="">Select District...</option>
+                  {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                <select
+                  required value={patBlock} onChange={(e) => setPatBlock(e.target.value)}
+                  className="w-full px-4 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm"
+                  disabled={!patDistrict}
+                >
+                  <option value="">{patDistrict ? 'Select Block...' : 'Select district first'}</option>
+                  {blocks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
                 <input
                   type="text" required placeholder="Village Name" value={patVillage} onChange={(e) => setPatVillage(e.target.value)}
                   className="w-full px-4 py-2.5 border rounded-xl bg-slate-50 focus:outline-none focus:border-teal-500 text-sm"

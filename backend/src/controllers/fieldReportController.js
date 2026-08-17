@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendDbError } = require('../utils/errors');
 
 // ============================================================================
 // FIELD REPORTS — Submit (FO) and Review (FM) workflow
@@ -41,7 +42,7 @@ const getFieldReports = async (req, res) => {
     const [countResult] = await db.query(countQuery, params);
 
     const dataQuery = `
-      SELECT fr.id, fr.report_text, fr.status, fr.review_comments, fr.reviewed_at, fr.created_at,
+      SELECT fr.id, fr.visit_id, fr.report_text, fr.status, fr.review_comments, fr.reviewed_at, fr.created_at,
              v.visit_date, v.purpose, v.latitude, v.longitude, v.notes as visit_notes, v.status as visit_status,
              fu.first_name as fo_first, fu.last_name as fo_last, fu.phone as fo_phone,
              rh.center_name as rhp_center,
@@ -65,7 +66,7 @@ const getFieldReports = async (req, res) => {
     res.json({ success: true, total: countResult[0].total, page: parseInt(page), data: reports });
   } catch (error) {
     console.error('Get field reports error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -105,7 +106,7 @@ const submitFieldReport = async (req, res) => {
     });
   } catch (error) {
     console.error('Submit field report error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -135,7 +136,7 @@ const reviewFieldReport = async (req, res) => {
     res.json({ success: true, message: `Field report ${status} successfully` });
   } catch (error) {
     console.error('Review field report error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
