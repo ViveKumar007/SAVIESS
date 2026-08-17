@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendDbError } = require('../utils/errors');
 
 // ── Named constants (previously magic numbers) ──
 const DEFAULT_REFERRAL_FACILITY = 'Saviess Base Hospital';
@@ -30,7 +31,7 @@ const getPatients = async (req, res) => {
     res.json({ success: true, data: patients });
   } catch (error) {
     console.error('Get patients error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -51,7 +52,7 @@ const getAllRhps = async (req, res) => {
     res.json({ success: true, data: rhps });
   } catch (error) {
     console.error('Get all RHPs error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -90,7 +91,7 @@ const registerPatient = async (req, res) => {
     });
   } catch (error) {
     console.error('Register patient error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -109,8 +110,8 @@ const logScreening = async (req, res) => {
     }
     const rhpId = rhps[0].id;
 
-    // Verify patient exists
-    const [patients] = await db.query('SELECT id FROM patients WHERE id = ?', [patientId]);
+    // Verify patient exists AND belongs to this RHP
+    const [patients] = await db.query('SELECT id FROM patients WHERE id = ? AND created_by_rhp_id = ?', [patientId, rhpId]);
     if (patients.length === 0) {
       return res.status(404).json({ success: false, error: 'Patient profile not found' });
     }
@@ -156,7 +157,7 @@ const logScreening = async (req, res) => {
     });
   } catch (error) {
     console.error('Log screening error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -178,8 +179,11 @@ const dispenseGlasses = async (req, res) => {
     }
     const rhpId = rhps[0].id;
 
-    // Verify patient & screening
-    const [screenings] = await connection.query('SELECT id FROM screenings WHERE id = ? AND patient_id = ?', [screeningId, patientId]);
+    // Verify patient & screening, and that this RHP is the one who performed the screening
+    const [screenings] = await connection.query(
+      'SELECT id FROM screenings WHERE id = ? AND patient_id = ? AND screened_by_rhp_id = ?',
+      [screeningId, patientId, rhpId]
+    );
     if (screenings.length === 0) {
       throw new Error('Matching patient refraction screening record not found');
     }
@@ -245,7 +249,7 @@ const dispenseGlasses = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Dispense glasses error:', error);
-    res.status(500).json({ success: false, error: 'Database transaction failed: ' + error.message });
+    sendDbError(res, error, 'Database transaction failed');
   } finally {
     connection.release();
   }
@@ -256,19 +260,27 @@ const getDispensingPdf = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const [dispense] = await db.query(
-      `SELECT g.*, p.first_name, p.last_name, p.age, p.gender, p.village, 
+    // RHPs may only download their own dispensing receipts; other authenticated
+    // roles (field officers, managers, admins) retain their documented oversight access.
+    let query = `
+      SELECT g.*, p.first_name, p.last_name, p.age, p.gender, p.village,
               d.name as district_name, b.name as block_name,
-              u.first_name as rhp_first, u.last_name as rhp_last, r.center_name
+              u.first_name as rhp_first, u.last_name as rhp_last, r.center_name, r.user_id as rhp_user_id
        FROM glass_dispensing g
        JOIN patients p ON g.patient_id = p.id
        JOIN districts d ON p.district_id = d.id
        JOIN blocks b ON p.block_id = b.id
        JOIN rhps r ON g.dispensed_by_rhp_id = r.id
        JOIN users u ON r.user_id = u.id
-       WHERE g.id = ?`,
-      [id]
-    );
+       WHERE g.id = ?
+    `;
+    const params = [id];
+    if (req.user.role === 'rhp') {
+      query += ' AND r.user_id = ?';
+      params.push(req.user.userId);
+    }
+
+    const [dispense] = await db.query(query, params);
 
     if (dispense.length === 0) {
       return res.status(404).json({ success: false, error: 'Dispensing record not found' });
@@ -405,7 +417,7 @@ const getDispensingPdf = async (req, res) => {
     res.end();
   } catch (error) {
     console.error('PDF generation error:', error);
-    res.status(500).json({ success: false, error: 'Failed to generate PDF invoice receipt: ' + error.message });
+    sendDbError(res, error, 'Failed to generate PDF invoice receipt');
   }
 };
 

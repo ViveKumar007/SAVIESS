@@ -21,6 +21,9 @@ async function loadSchema() {
   let sql3 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_add_states.sql'), 'utf8');
   let sql4 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_fm_teams.sql'), 'utf8');
   let sql5 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_rhp_registration.sql'), 'utf8');
+  let sql6 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_pd_module.sql'), 'utf8');
+  let sql7 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_field_manager_profile.sql'), 'utf8');
+  let sql8 = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'migration_audit_fixes.sql'), 'utf8');
 
   // Clean all SQL files
   const cleanSql = (content) => {
@@ -36,6 +39,9 @@ async function loadSchema() {
   sql3 = cleanSql(sql3);
   sql4 = cleanSql(sql4);
   sql5 = cleanSql(sql5);
+  sql6 = cleanSql(sql6);
+  sql7 = cleanSql(sql7);
+  sql8 = cleanSql(sql8);
 
   const executeSql = async (conn, sqlContent, name) => {
     console.log(`Applying ${name}...`);
@@ -65,6 +71,9 @@ async function loadSchema() {
   await executeSql(conn, sql3, 'migration_add_states.sql');
   await executeSql(conn, sql4, 'migration_fm_teams.sql');
   await executeSql(conn, sql5, 'migration_rhp_registration.sql');
+  await executeSql(conn, sql6, 'migration_pd_module.sql');
+  await executeSql(conn, sql7, 'migration_field_manager_profile.sql');
+  await executeSql(conn, sql8, 'migration_audit_fixes.sql');
   console.log('✅ Schema and all migrations processed successfully!');
 
   // Now create triggers separately (TiDB supports triggers)

@@ -1,8 +1,19 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 
 const { verifyToken, checkRole } = require('../middleware/auth');
 const { upload } = require('../utils/uploadHandler');
+
+// Login/provisioning are the two endpoints an attacker would brute-force
+// (predictable default passwords make this a real risk) — throttle both.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many attempts. Please try again in a few minutes.' }
+});
 
 // Controllers
 const authController = require('../controllers/authController');
@@ -17,16 +28,19 @@ const fieldReportController = require('../controllers/fieldReportController');
 const rhpRegistrationController = require('../controllers/rhpRegistrationController');
 const fieldManagerController = require('../controllers/fieldManagerController');
 const pdModuleController = require('../controllers/pdModuleController');
+const uploadController = require('../controllers/uploadController');
 
 // ----------------------------------------------------------------------------
 // 1. Auth Module
 // ----------------------------------------------------------------------------
 router.post('/auth/register', authController.register); // Restricted inside controller based on user presence
-router.post('/auth/login', authController.login);
+router.post('/auth/login', authLimiter, authController.login);
+router.post('/auth/refresh', authController.refresh);
 router.get('/auth/profile', verifyToken, authController.getProfile);
 router.put('/auth/change-password', verifyToken, authController.changePassword);
 router.post(
   '/auth/provision',
+  authLimiter,
   verifyToken,
   checkRole(['super_admin', 'program_director', 'field_manager']),
   authController.provisionUser
@@ -191,8 +205,9 @@ router.get(
 // 5. Visits & Live Location Module
 // ----------------------------------------------------------------------------
 router.get(
-  '/visits', 
-  verifyToken, 
+  '/visits',
+  verifyToken,
+  checkRole(['super_admin', 'program_director', 'field_manager', 'field_officer']),
   visitController.getVisits
 );
 router.post(
@@ -312,6 +327,18 @@ router.put(
   verifyToken,
   checkRole(['super_admin']),
   dashboardController.updateFieldManagerStatus
+);
+router.put(
+  '/dashboard/field-managers/:userId/availability',
+  verifyToken,
+  checkRole(['super_admin']),
+  dashboardController.updateFieldManagerAvailability
+);
+router.put(
+  '/dashboard/field-managers/:userId',
+  verifyToken,
+  checkRole(['super_admin']),
+  dashboardController.updateFieldManagerDetails
 );
 
 
@@ -588,7 +615,7 @@ router.delete(
 router.get(
   '/pd/eyeglass-colors',
   verifyToken,
-  checkRole(['super_admin', 'program_director']),
+  checkRole(['super_admin', 'program_director', 'field_officer']),
   pdModuleController.getColors
 );
 router.post(
@@ -622,7 +649,7 @@ router.get(
 router.get(
   '/pd/fo-allocations',
   verifyToken,
-  checkRole(['super_admin', 'program_director']),
+  checkRole(['super_admin', 'program_director', 'field_officer']),
   pdModuleController.getFoAllocations
 );
 router.post(
@@ -667,6 +694,15 @@ router.get(
   verifyToken,
   checkRole(['super_admin', 'program_director']),
   pdModuleController.exportDistributions
+);
+
+// ----------------------------------------------------------------------------
+// 13. Media Uploads — signed URL for authenticated-delivery Cloudinary assets
+// ----------------------------------------------------------------------------
+router.get(
+  '/uploads/signed-url',
+  verifyToken,
+  uploadController.getUploadSignedUrl
 );
 
 module.exports = router;

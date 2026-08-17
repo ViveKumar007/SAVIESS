@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendDbError } = require('../utils/errors');
 
 // ── Named constants (previously magic numbers) ──
 const TOOLKIT_LOW_STOCK_THRESHOLD = 5;
@@ -128,7 +129,7 @@ const getDashboardSummary = async (req, res) => {
     const elapsed = Date.now() - startTime;
     console.error(`[DASHBOARD] getDashboardSummary FAILED after ${elapsed}ms:`, error.message);
     console.error('[DASHBOARD] Full error stack:', error.stack);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -156,7 +157,7 @@ const getFoDailySummary = async (req, res) => {
     });
   } catch (error) {
     console.error('Get FO daily summary error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -220,7 +221,7 @@ const getAllPatients = async (req, res) => {
     const elapsed = Date.now() - startTime;
     console.error(`[ADMIN-DATA] getAllPatients FAILED after ${elapsed}ms:`, error.message);
     console.error('[ADMIN-DATA] Stack:', error.stack);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -287,7 +288,7 @@ const getAllScreenings = async (req, res) => {
     const elapsed = Date.now() - startTime;
     console.error(`[ADMIN-DATA] getAllScreenings FAILED after ${elapsed}ms:`, error.message);
     console.error('[ADMIN-DATA] Stack:', error.stack);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -355,7 +356,7 @@ const getAllDispensings = async (req, res) => {
     const elapsed = Date.now() - startTime;
     console.error(`[ADMIN-DATA] getAllDispensings FAILED after ${elapsed}ms:`, error.message);
     console.error('[ADMIN-DATA] Stack:', error.stack);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -400,7 +401,7 @@ const getAllVisits = async (req, res) => {
              v.notes, v.status, v.check_in_time, v.check_out_time,
              fu.first_name as fo_first, fu.last_name as fo_last, fu.phone as fo_phone,
              r.center_name as rhp_center, ru.first_name as rhp_first, ru.last_name as rhp_last,
-             pr.file_url as proof_image_url,
+             pr.file_url as proof_image_url, pr.public_id as proof_public_id, pr.mime_type as proof_mime_type,
              v.created_at
       FROM fo_visits v
       JOIN field_officers f ON v.fo_id = f.id
@@ -424,7 +425,7 @@ const getAllVisits = async (req, res) => {
     const elapsed = Date.now() - startTime;
     console.error(`[ADMIN-DATA] getAllVisits FAILED after ${elapsed}ms:`, error.message);
     console.error('[ADMIN-DATA] Stack:', error.stack);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -537,7 +538,7 @@ const getPdSummary = async (req, res) => {
     });
   } catch (error) {
     console.error('Get PD summary error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -630,7 +631,7 @@ const getFmSummary = async (req, res) => {
     });
   } catch (error) {
     console.error('Get FM summary error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -644,6 +645,8 @@ const getFieldManagers = async (req, res) => {
     const [managers] = await db.query(`
       SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.is_active,
              u.last_login, u.created_at,
+             fm.employee_code, fm.coverage_area, fm.availability_status,
+             d.name as district_name, b.name as block_name,
              (SELECT COUNT(*) FROM field_officers fo WHERE fo.manager_id = u.id) as fo_count,
              (SELECT COUNT(*) FROM field_officers fo2 WHERE fo2.manager_id = u.id AND fo2.status = 'active') as active_fo_count,
              (SELECT COUNT(*) FROM fm_teams t WHERE t.manager_user_id = u.id) as team_count,
@@ -660,6 +663,9 @@ const getFieldManagers = async (req, res) => {
               JOIN field_officers fo6 ON v4.fo_id = fo6.id
               WHERE fo6.manager_id = u.id) as last_visit_date
       FROM users u
+      LEFT JOIN field_managers fm ON fm.user_id = u.id
+      LEFT JOIN districts d ON fm.district_id = d.id
+      LEFT JOIN blocks b ON fm.block_id = b.id
       WHERE u.role = 'field_manager'
       ORDER BY u.first_name ASC
     `);
@@ -667,7 +673,7 @@ const getFieldManagers = async (req, res) => {
     res.json({ success: true, data: managers });
   } catch (error) {
     console.error('[ADMIN] getFieldManagers error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -676,11 +682,17 @@ const getFieldManagerDetail = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    // 1. FM user profile
-    const [users] = await db.query(
-      'SELECT id, email, first_name, last_name, phone, is_active, last_login, created_at FROM users WHERE id = ? AND role = ?',
-      [userId, 'field_manager']
-    );
+    // 1. FM user profile (LEFT JOIN — pre-existing FMs may not have a field_managers row yet)
+    const [users] = await db.query(`
+      SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.is_active, u.last_login, u.created_at,
+             fm.employee_code, fm.coverage_area, fm.availability_status,
+             fm.district_id, fm.block_id, d.name as district_name, b.name as block_name
+      FROM users u
+      LEFT JOIN field_managers fm ON fm.user_id = u.id
+      LEFT JOIN districts d ON fm.district_id = d.id
+      LEFT JOIN blocks b ON fm.block_id = b.id
+      WHERE u.id = ? AND u.role = ?
+    `, [userId, 'field_manager']);
     if (users.length === 0) {
       return res.status(404).json({ success: false, error: 'Field Manager not found' });
     }
@@ -738,11 +750,14 @@ const getFieldManagerDetail = async (req, res) => {
     `, [userId]);
 
     // 5. Performance metrics
+    // "Missed" is computed, not stored: a visit still 'planned' whose date has
+    // already passed. Keeps 'pending' meaning only genuinely upcoming visits.
     const [visitStats] = await db.query(`
       SELECT
         COUNT(*) as total_visits,
         SUM(CASE WHEN v.status = 'completed' THEN 1 ELSE 0 END) as completed,
-        SUM(CASE WHEN v.status = 'planned' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN v.status = 'planned' AND v.visit_date >= CURDATE() THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN v.status = 'planned' AND v.visit_date < CURDATE() THEN 1 ELSE 0 END) as missed,
         SUM(CASE WHEN v.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
         SUM(CASE WHEN v.visit_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN 1 ELSE 0 END) as this_month,
         SUM(CASE WHEN v.visit_date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')
@@ -770,6 +785,40 @@ const getFieldManagerDetail = async (req, res) => {
       reportStats = [{ total_reports: 0, approved: 0, pending: 0, rejected: 0 }];
     }
 
+    // 6b. Last activity — distinct from last_login: the most recent action
+    // this FM actually performed (report review, application update, or a
+    // visit logged by their team), computed across tables rather than stored.
+    const [activityRows] = await db.query(`
+      SELECT
+        (SELECT MAX(reviewed_at) FROM field_reports WHERE reviewed_by_user_id = ?) as last_report_review,
+        (SELECT MAX(updated_at) FROM rhp_applications WHERE updated_by_user_id = ?) as last_application_update,
+        (SELECT MAX(v.created_at) FROM fo_visits v JOIN field_officers fo ON v.fo_id = fo.id WHERE fo.manager_id = ?) as last_team_visit,
+        (SELECT last_login FROM users WHERE id = ?) as last_login
+    `, [userId, userId, userId, userId]);
+    const activityTimestamps = Object.values(activityRows[0]).filter(Boolean).map(d => new Date(d).getTime());
+    const lastActivityAt = activityTimestamps.length > 0 ? new Date(Math.max(...activityTimestamps)) : null;
+
+    // 6c. Recent admin actions — lightweight audit trail (report reviews +
+    // application status changes performed by this FM), not a generic
+    // system-wide audit_log table.
+    const [recentAdminActions] = await db.query(`
+      SELECT * FROM (
+        SELECT 'field_report_review' as action_type, fr.reviewed_at as action_at,
+               CONCAT('Reviewed field report (', fr.status, ')') as description
+        FROM field_reports fr
+        WHERE fr.reviewed_by_user_id = ?
+
+        UNION ALL
+
+        SELECT 'application_status_update' as action_type, ra.updated_at as action_at,
+               CONCAT('Updated RHP application for ', ra.first_name, ' ', ra.last_name, ' to ', ra.status) as description
+        FROM rhp_applications ra
+        WHERE ra.updated_by_user_id = ?
+      ) actions
+      ORDER BY action_at DESC
+      LIMIT 10
+    `, [userId, userId]);
+
     // 7. Live locations of FOs
     const [liveLocations] = await db.query(`
       SELECT l.fo_id, l.latitude, l.longitude, l.accuracy, l.battery_level, l.last_updated,
@@ -784,7 +833,8 @@ const getFieldManagerDetail = async (req, res) => {
 
     // 8. Recent activity (last 10 visits)
     const [recentActivity] = await db.query(`
-      SELECT v.id, v.visit_date, v.purpose, v.status, v.notes,
+      SELECT v.id, v.visit_date, v.purpose, v.notes,
+             CASE WHEN v.status = 'planned' AND v.visit_date < CURDATE() THEN 'missed' ELSE v.status END as status,
              fu.first_name as fo_first, fu.last_name as fo_last,
              r.center_name as rhp_center, v.created_at
       FROM fo_visits v
@@ -807,13 +857,15 @@ const getFieldManagerDetail = async (req, res) => {
           visits: visitStats[0] || {},
           reports: reportStats[0] || {}
         },
+        lastActivityAt,
         liveLocations,
-        recentActivity
+        recentActivity,
+        recentAdminActions
       }
     });
   } catch (error) {
     console.error('[ADMIN] getFieldManagerDetail error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -829,7 +881,13 @@ const getFieldManagerVisitHistory = async (req, res) => {
 
     if (startDate) { whereClause += ' AND v.visit_date >= ?'; params.push(startDate); }
     if (endDate) { whereClause += ' AND v.visit_date <= ?'; params.push(endDate); }
-    if (status) { whereClause += ' AND v.status = ?'; params.push(status); }
+    if (status === 'missed') {
+      // "Missed" is computed (planned + date passed), not a stored value
+      whereClause += " AND v.status = 'planned' AND v.visit_date < CURDATE()";
+    } else if (status) {
+      whereClause += ' AND v.status = ?';
+      params.push(status);
+    }
     if (search) {
       whereClause += ' AND (fu.first_name LIKE ? OR fu.last_name LIKE ? OR r.center_name LIKE ?)';
       const term = `%${search}%`;
@@ -847,11 +905,13 @@ const getFieldManagerVisitHistory = async (req, res) => {
     const dataParams = [...params, parseInt(limit), offset];
     const [visits] = await db.query(`
       SELECT v.id, v.visit_date, v.purpose, v.latitude, v.longitude,
-             v.notes, v.status, v.check_in_time, v.check_out_time,
+             v.notes, v.check_in_time, v.check_out_time,
+             CASE WHEN v.status = 'planned' AND v.visit_date < CURDATE() THEN 'missed' ELSE v.status END as status,
              fu.first_name as fo_first, fu.last_name as fo_last, fu.phone as fo_phone,
              r.center_name as rhp_center, r.village as rhp_village,
              ru.first_name as rhp_first, ru.last_name as rhp_last,
              p.file_url as proof_image_url, p.file_name as proof_file_name,
+             p.public_id as proof_public_id, p.mime_type as proof_mime_type,
              v.created_at
       FROM fo_visits v
       JOIN field_officers fo ON v.fo_id = fo.id
@@ -872,7 +932,7 @@ const getFieldManagerVisitHistory = async (req, res) => {
     });
   } catch (error) {
     console.error('[ADMIN] getFieldManagerVisitHistory error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -896,7 +956,103 @@ const updateFieldManagerStatus = async (req, res) => {
     res.json({ success: true, message: `Field Manager ${isActive ? 'activated' : 'deactivated'} successfully` });
   } catch (error) {
     console.error('[ADMIN] updateFieldManagerStatus error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
+  }
+};
+
+// PUT /dashboard/field-managers/:userId — Edit name/phone/region/coverage area
+const updateFieldManagerDetails = async (req, res) => {
+  const { userId } = req.params;
+  const { firstName, lastName, phone, districtId, blockId, coverageArea } = req.body;
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [user] = await connection.query('SELECT id FROM users WHERE id = ? AND role = ?', [userId, 'field_manager']);
+    if (user.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, error: 'Field Manager not found' });
+    }
+
+    const userUpdates = [];
+    const userParams = [];
+    if (firstName !== undefined) { userUpdates.push('first_name = ?'); userParams.push(firstName); }
+    if (lastName !== undefined) { userUpdates.push('last_name = ?'); userParams.push(lastName); }
+    if (phone !== undefined) { userUpdates.push('phone = ?'); userParams.push(phone); }
+    if (userUpdates.length > 0) {
+      userParams.push(userId);
+      await connection.query(`UPDATE users SET ${userUpdates.join(', ')} WHERE id = ?`, userParams);
+    }
+
+    // field_managers profile row may not exist for FMs provisioned before this feature — upsert it
+    const [existingProfile] = await connection.query('SELECT id FROM field_managers WHERE user_id = ?', [userId]);
+    if (existingProfile.length === 0) {
+      if (!districtId || !blockId) {
+        await connection.rollback();
+        return res.status(400).json({ success: false, error: 'District and block are required to create this Field Manager\'s profile for the first time' });
+      }
+      const [codeRows] = await connection.query('SELECT employee_code FROM field_managers ORDER BY id DESC LIMIT 1');
+      let nextSeq = 1;
+      if (codeRows.length > 0) {
+        const lastSeq = parseInt(codeRows[0].employee_code.split('-')[1], 10);
+        nextSeq = (Number.isNaN(lastSeq) ? 0 : lastSeq) + 1;
+      }
+      const employeeCode = `FM-${nextSeq.toString().padStart(5, '0')}`;
+      await connection.query(
+        `INSERT INTO field_managers (user_id, employee_code, district_id, block_id, coverage_area, availability_status)
+         VALUES (?, ?, ?, ?, ?, 'active')`,
+        [userId, employeeCode, parseInt(districtId), parseInt(blockId), coverageArea || '']
+      );
+    } else {
+      const profileUpdates = [];
+      const profileParams = [];
+      if (districtId !== undefined) { profileUpdates.push('district_id = ?'); profileParams.push(parseInt(districtId)); }
+      if (blockId !== undefined) { profileUpdates.push('block_id = ?'); profileParams.push(parseInt(blockId)); }
+      if (coverageArea !== undefined) { profileUpdates.push('coverage_area = ?'); profileParams.push(coverageArea); }
+      if (profileUpdates.length > 0) {
+        profileParams.push(userId);
+        await connection.query(`UPDATE field_managers SET ${profileUpdates.join(', ')} WHERE user_id = ?`, profileParams);
+      }
+    }
+
+    await connection.commit();
+    res.json({ success: true, message: 'Field Manager details updated successfully' });
+  } catch (error) {
+    await connection.rollback();
+    console.error('[ADMIN] updateFieldManagerDetails error:', error);
+    sendDbError(res, error, 'Database error');
+  } finally {
+    connection.release();
+  }
+};
+
+// PUT /dashboard/field-managers/:userId/availability — Active / On Leave / Inactive
+// Deliberately independent of users.is_active (which continues to gate login).
+const updateFieldManagerAvailability = async (req, res) => {
+  const { userId } = req.params;
+  const { availabilityStatus } = req.body;
+
+  const validStatuses = ['active', 'on_leave', 'inactive'];
+  if (!availabilityStatus || !validStatuses.includes(availabilityStatus)) {
+    return res.status(400).json({ success: false, error: `availabilityStatus must be one of: ${validStatuses.join(', ')}` });
+  }
+
+  try {
+    const [user] = await db.query('SELECT id FROM users WHERE id = ? AND role = ?', [userId, 'field_manager']);
+    if (user.length === 0) {
+      return res.status(404).json({ success: false, error: 'Field Manager not found' });
+    }
+
+    const [result] = await db.query('UPDATE field_managers SET availability_status = ? WHERE user_id = ?', [availabilityStatus, userId]);
+    if (result.affectedRows === 0) {
+      return res.status(400).json({ success: false, error: 'This Field Manager has no profile yet — edit their details first to set a region.' });
+    }
+
+    res.json({ success: true, message: `Field Manager availability set to '${availabilityStatus}'` });
+  } catch (error) {
+    console.error('[ADMIN] updateFieldManagerAvailability error:', error);
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -909,10 +1065,13 @@ const reassignFieldOfficer = async (req, res) => {
   }
 
   try {
-    // Verify new manager exists and is a field_manager
-    const [mgr] = await db.query('SELECT id FROM users WHERE id = ? AND role = ?', [newManagerUserId, 'field_manager']);
+    // Verify new manager exists, is a field_manager, and is an active account
+    const [mgr] = await db.query('SELECT id, is_active FROM users WHERE id = ? AND role = ?', [newManagerUserId, 'field_manager']);
     if (mgr.length === 0) {
       return res.status(404).json({ success: false, error: 'Target Field Manager not found' });
+    }
+    if (!mgr[0].is_active) {
+      return res.status(400).json({ success: false, error: 'Cannot reassign to a deactivated Field Manager' });
     }
 
     // Verify FO exists
@@ -926,7 +1085,7 @@ const reassignFieldOfficer = async (req, res) => {
     res.json({ success: true, message: 'Field Officer reassigned successfully' });
   } catch (error) {
     console.error('[ADMIN] reassignFieldOfficer error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -943,5 +1102,7 @@ module.exports = {
   getFieldManagerDetail,
   getFieldManagerVisitHistory,
   updateFieldManagerStatus,
+  updateFieldManagerDetails,
+  updateFieldManagerAvailability,
   reassignFieldOfficer
 };

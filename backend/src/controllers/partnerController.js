@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendDbError } = require('../utils/errors');
 
 // ============================================================================
 // PARTNER MANAGEMENT — CRUD for Program Director
@@ -34,7 +35,7 @@ const getPartners = async (req, res) => {
     res.json({ success: true, data: partners });
   } catch (error) {
     console.error('Get partners error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -60,7 +61,7 @@ const createPartner = async (req, res) => {
     });
   } catch (error) {
     console.error('Create partner error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -87,7 +88,7 @@ const updatePartner = async (req, res) => {
     res.json({ success: true, message: 'Partner updated successfully' });
   } catch (error) {
     console.error('Update partner error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -105,7 +106,7 @@ const deletePartner = async (req, res) => {
     res.json({ success: true, message: 'Partner deactivated successfully' });
   } catch (error) {
     console.error('Delete partner error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 

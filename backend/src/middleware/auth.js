@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
+const db = require('../config/db');
 
 // Verify token middleware
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -11,6 +12,14 @@ const verifyToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // A deactivated account's previously-issued access token must stop working
+    // immediately rather than remaining valid until it naturally expires.
+    const [rows] = await db.query('SELECT is_active FROM users WHERE id = ?', [decoded.userId]);
+    if (rows.length === 0 || !rows[0].is_active) {
+      return res.status(403).json({ success: false, error: 'Account is deactivated or no longer exists' });
+    }
+
     req.user = decoded;
     next();
   } catch (error) {

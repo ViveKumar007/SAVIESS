@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendDbError } = require('../utils/errors');
 
 // ── Named constants (previously magic numbers) ──
 const TOOLKIT_LOW_STOCK_THRESHOLD = 5;
@@ -23,7 +24,7 @@ const getCentralInventory = async (req, res) => {
     res.json({ success: true, data: items });
   } catch (error) {
     console.error('Get central inventory error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -65,7 +66,7 @@ const addCentralStock = async (req, res) => {
     res.json({ success: true, message: 'Stock restocked successfully inside central warehouse' });
   } catch (error) {
     console.error('Add central stock error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -132,7 +133,7 @@ const dispatchToRhp = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Dispatch to RHP error:', error);
-    res.status(500).json({ success: false, error: 'Dispatch transaction failed: ' + error.message });
+    sendDbError(res, error, 'Dispatch transaction failed');
   } finally {
     connection.release();
   }
@@ -142,11 +143,20 @@ const dispatchToRhp = async (req, res) => {
 const getRhpInventory = async (req, res) => {
   const { rhpId } = req.params;
   try {
+    // An RHP may only ever view their own local inventory; admin/PD/FM roles
+    // retain full oversight access (e.g. verifying stock before dispatch).
+    if (req.user.role === 'rhp') {
+      const [ownRhp] = await db.query('SELECT id FROM rhps WHERE user_id = ?', [req.user.userId]);
+      if (ownRhp.length === 0 || String(ownRhp[0].id) !== String(rhpId)) {
+        return res.status(403).json({ success: false, error: 'Forbidden: you can only view your own inventory' });
+      }
+    }
+
     const [items] = await db.query('SELECT * FROM inventory_rhp WHERE rhp_id = ?', [rhpId]);
     res.json({ success: true, data: items });
   } catch (error) {
     console.error('Get RHP inventory error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -161,7 +171,7 @@ const getToolkitInventory = async (req, res) => {
     res.json({ success: true, data: enriched });
   } catch (error) {
     console.error('Get toolkit inventory error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -190,7 +200,7 @@ const addToolkits = async (req, res) => {
     res.json({ success: true, message: 'Toolkits restocked successfully' });
   } catch (error) {
     console.error('Add toolkits error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -256,7 +266,7 @@ const issueToolkit = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Issue toolkit error:', error);
-    res.status(500).json({ success: false, error: 'Toolkit issuance transaction failed: ' + error.message });
+    sendDbError(res, error, 'Toolkit issuance transaction failed');
   } finally {
     connection.release();
   }
@@ -324,7 +334,7 @@ const raiseIndent = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Raise indent error:', error);
-    res.status(500).json({ success: false, error: 'Database transaction failed: ' + error.message });
+    sendDbError(res, error, 'Database transaction failed');
   } finally {
     connection.release();
   }
@@ -375,7 +385,7 @@ const getIndents = async (req, res) => {
     res.json({ success: true, data: enrichedList });
   } catch (error) {
     console.error('Get indents error:', error);
-    res.status(500).json({ success: false, error: 'Database error: ' + error.message });
+    sendDbError(res, error, 'Database error');
   }
 };
 
@@ -399,19 +409,28 @@ const updateIndentStatus = async (req, res) => {
     }
     const indent = indents[0];
 
-    // Check if status is a transition to 'approved' and we have item approvals
-    if (status === 'approved' && itemsApproved && Array.isArray(itemsApproved)) {
-      for (const approval of itemsApproved) {
+    // Approval flow. If the caller supplies per-line adjustments (itemsApproved),
+    // use those; otherwise default every line's quantity_approved to what was
+    // requested — this is what a one-click "Approve" (no line-item editor) means.
+    if (status === 'approved') {
+      if (itemsApproved && Array.isArray(itemsApproved)) {
+        for (const approval of itemsApproved) {
+          await connection.query(
+            'UPDATE indent_items SET quantity_approved = ? WHERE id = ? AND indent_id = ?',
+            [parseInt(approval.quantityApproved), parseInt(approval.itemId), id]
+          );
+        }
+      } else {
         await connection.query(
-          'UPDATE indent_items SET quantity_approved = ? WHERE id = ? AND indent_id = ?',
-          [parseInt(approval.quantityApproved), parseInt(approval.itemId), id]
+          'UPDATE indent_items SET quantity_approved = quantity_requested WHERE indent_id = ?',
+          [id]
         );
       }
       await connection.query(
         'UPDATE indents SET status = "approved", approval_date = CURRENT_DATE, approved_by_user_id = ?, comments = ? WHERE id = ?',
         [req.user.userId, comments || indent.comments, id]
       );
-    } 
+    }
     // Dispatch flow: Deduct from central warehouse
     else if (status === 'dispatched') {
       if (indent.status !== 'approved' && indent.status !== 'pending_approval') {
@@ -522,7 +541,7 @@ const updateIndentStatus = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('Update indent status error:', error);
-    res.status(500).json({ success: false, error: 'Database update transaction failed: ' + error.message });
+    sendDbError(res, error, 'Database update transaction failed');
   } finally {
     connection.release();
   }

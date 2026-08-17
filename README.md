@@ -180,9 +180,7 @@ saviess-vep/
 │       ├── server.js             # Express + Socket.io bootstrap & event handlers
 │       ├── config/
 │       │   ├── db.js             # MySQL2 connection pool with TiDB SSL support
-│       │   ├── seed.js           # Primary database seeder (states, users, inventory)
-│       │   ├── seed_mock_data.js # Extended mock data seeder
-│       │   ├── seed_remaining.js # Supplementary seed script
+│       │   ├── seed.js           # Database seeder (states, demo users, inventory)
 │       │   └── migrate_to_cloud.js  # Local → TiDB Cloud migration utility
 │       ├── controllers/
 │       │   ├── authController.js           # Login, register, provision, password management

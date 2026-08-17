@@ -93,6 +93,7 @@ const FieldManagerDashboard = () => {
   const [editTeamName, setEditTeamName] = useState('');
   const [editTeamDesc, setEditTeamDesc] = useState('');
   const [availableFos, setAvailableFos] = useState([]);
+  const [availableFosError, setAvailableFosError] = useState('');
   const [selectedFosToAdd, setSelectedFosToAdd] = useState([]);
   const [addingMembers, setAddingMembers] = useState(null);
 
@@ -214,8 +215,11 @@ const FieldManagerDashboard = () => {
   const fetchAvailableFos = async () => {
     try {
       const res = await axios.get(`${API}/fm/field-officers`, { headers });
-      if (res.data.success) setAvailableFos(res.data.data);
-    } catch (err) { console.error('Available FOs error:', err); }
+      if (res.data.success) { setAvailableFos(res.data.data); setAvailableFosError(''); }
+    } catch (err) {
+      console.error('Available FOs error:', err);
+      setAvailableFosError('Unable to load Field Officers. Refresh to try again.');
+    }
   };
 
   const fetchLiveLocations = async () => {
@@ -363,6 +367,21 @@ const FieldManagerDashboard = () => {
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
   const formatTime = (d) => d ? new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
   const minutesAgo = (d) => d ? Math.floor((Date.now() - new Date(d).getTime()) / 60000) : null;
+
+  // Proof photos are stored with authenticated (non-public) Cloudinary delivery —
+  // fetch a short-lived signed URL before opening the viewer modal.
+  const openProofModal = async ({ publicId, mimeType, name, foName, center, date }) => {
+    try {
+      const res = await axios.get(`${API}/uploads/signed-url`, {
+        headers,
+        params: { publicId, mimeType }
+      });
+      if (res.data.success) setProofModal({ url: res.data.url, name, foName, center, date });
+    } catch (err) {
+      console.error('View proof error:', err);
+      alert('Unable to load this file right now.');
+    }
+  };
 
   if (loading) {
     return (
@@ -895,7 +914,9 @@ const FieldManagerDashboard = () => {
                                   </label>
                                 ))}
                               {availableFos.filter(fo => !team.members?.some(m => m.fo_id === fo.fo_id)).length === 0 && (
-                                <p className="text-xs text-slate-400 col-span-full py-2">All managed FOs are already in this team</p>
+                                <p className="text-xs text-slate-400 col-span-full py-2">
+                                  {availableFosError || 'All managed FOs are already in this team'}
+                                </p>
                               )}
                             </div>
                             <div className="flex space-x-2">
@@ -1167,7 +1188,7 @@ const FieldManagerDashboard = () => {
                           <td className="td-cell">{getStatusBadge(v.status)}</td>
                           <td className="td-cell">
                             {v.proof_image_url ? (
-                              <button onClick={() => setProofModal({ url: v.proof_image_url, name: v.proof_file_name, foName: `${v.fo_first} ${v.fo_last}`, center: v.rhp_center, date: v.visit_date })}
+                              <button onClick={() => openProofModal({ publicId: v.proof_public_id, mimeType: v.proof_mime_type, name: v.proof_file_name, foName: `${v.fo_first} ${v.fo_last}`, center: v.rhp_center, date: v.visit_date })}
                                 className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] rounded-lg border border-indigo-200 transition-all group">
                                 <Camera className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                 <span>View Proof</span>
